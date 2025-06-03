@@ -1,0 +1,10 @@
+[deps]
+LegendDSP = "e6d7a502-be5c-5049-a927-8d60e566555d"
+LegendDataTypes = "99e09c13-5545-5ee2-bfa2-77f358fb75d8"
+LegendHDF5IO = "c9265ca6-b027-5446-b1a4-febfa8dd10b0"
+LsqFit = "2fda8390-95c7-5789-9bda-21331edee243"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+RadiationDetectorDSP = "afd6e06f-c550-5763-af36-7391d39e46ec"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
