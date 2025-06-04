@@ -13,19 +13,27 @@ using .Max_TrapFilter
 
 
 
-file = "/remote/ceph/user/a/alvarez/ComptonScanner/Ba_Data/raw_data/133Ba_Compton_R_0.0mm_Z_-0.0mm_Phi_138.7deg_T_80.0K_measuretime_300sec-ICPC-20250522T144857Z.lh5"
+#file = "/remote/ceph/user/a/alvarez/ComptonScanner/Ba_Data/raw_data/133Ba_Compton_R_0.0mm_Z_-0.0mm_Phi_138.7deg_T_80.0K_measuretime_300sec-ICPC-20250522T144857Z.lh5"
+
+file = "/remote/ceph/user/a/alvarez/ComptonScanner/Cs_Data/raw_data/R_51.0mm_Z_0.0mm_Phi_113.1deg_T_80.0K_measuretime_300sec-ICPC-20250523T132022Z.lh5"
 
 t = lh5open(file) do h
     h["1"][:]
 end
 
-truebaseline_previousdata = 8546.0
-tau = 59000
+#Ba
+#truebaseline_previousdata = 8546.0
+#tau = 59000
+
+#Cs
+truebaseline_previousdata = 8542.0
+tau = 56000
+
 dt = 4 #ns
 tau_alg = tau / dt
 
-av = 20
-gap = 150
+av = 80
+gap = 300
 
 #plot 10 raw waveform and pass mean value from previous studies
 
@@ -68,8 +76,15 @@ gap_time = (gap*dt) + L_time
 vline!([L_time], label = "Average = $av ($(av*dt) ns)")
 vline!([gap_time], label = "Gap = $gap ($(gap*dt) ns)")
 
-#savefig("Trapfilter_$(peakno)_av_$(av)_gap_$(gap).png")
+savefig("Trapfilter_Cs_$(peakno)_av_$(av)_gap_$(gap).png")
 
+
+
+
+
+
+#ENERGY SPECTRUM
+#=
 ADC_Counts =  maximum(f_)
 println("ADC counts returned by filter: $(ADC_Counts)")
 
@@ -100,7 +115,7 @@ flat_max_adcs = collect(Iterators.flatten(filtered_results))
 max_adc_notresolving = maximum.(filtered_Trapezoids)
 println("Trapezoids just one max: $(max_adc_notresolving[1:11])")
 
-#appliying a threshold for the max, we can get 2 max per signal if overlapped pulses
+#applying a threshold for the max, we can get 2 max per signal if overlapped pulses
 #stephist(1.09 .* flat_max_adcs, bins = 0:1000, fmt = :png, label = "",xlabel = "Energy [keV]", ylabel = "Counts", xlimits=(0,500), ylimits = (0,10000))
 
 #plot with just maximum of the trapezoids (one per signal)
@@ -113,3 +128,4 @@ vline!([31,81,276,302,356,383] .+ 81, label = "133Ba lines + 81 keV")
 
 #savefig("BaSpectrum_av_$(av)_gap_$(gap)_maxvalue_range0-500.png")
 #savefig("BaSpectrum_av_$(av)_gap_$(gap)_threshold_$(threshold)_range0-500.png")
+=#
