@@ -78,7 +78,7 @@ stephist(τ*dt, bins = 40000:400:80000, xlabel = "τ [ns]")
 vline!([59000], label="mean = 59000 ns")
 
 truebaseline_previousdata = 8546.0
-tau = 59000
+tau_alg = 59000
 
 # Corrected signal waveform
 

@@ -1,5 +1,5 @@
 using LegendHDF5IO
-using Statistics
+1;95;0cusing Statistics
 using ProgressMeter
 using Plots
 using StatsBase
@@ -28,7 +28,6 @@ end
 #Cs
 truebaseline_previousdata = 8542.0
 tau = 56000
-
 dt = 4 #ns
 tau_alg = tau / dt
 
@@ -41,14 +40,17 @@ plot(0:dt:1200*dt-dt, t.samples[findall(t.channel .== 1)][1:10], xlabel = "Time 
 hline!([truebaseline_previousdata])
 
 
+# Corrected signal waveform
+
 tc = @showprogress map(p -> let pc = InvCRFilter(tau_alg)(p .- truebaseline_previousdata)
     pc .- mean(pc[1:200]) # mean(pc[1000:1200]) - mean(pc[1:200])
     end, t.samples[findall(t.channel .== 1)]);
 
 
+plot(0:4:1200*4-4, tc[1:10], xlabel = "Time in ns", ylabel = "Signal in ADC units", fmt = :png, size = (600,400), legend = false, title = "Baseline- and decay-corrected waveforms")
 
+#savefig("CorrectedSignal_Cs_file1.png")
 
-plot(xlabel = "Time in ns", ylabel = "Signal after Trapezoid Filter")
 
 #=
 # Plot each filtered waveform with proper time axis (assuming 4 ns per sample)
@@ -63,6 +65,12 @@ end
 display(current())
 =#
 
+
+#PRINT CORRECTED PEAKS + TRAPEZOID
+
+threshold = 20
+
+#=
 offset_ns = 2000
 peakno = 1
 
@@ -76,37 +84,33 @@ gap_time = (gap*dt) + L_time
 vline!([L_time], label = "Average = $av ($(av*dt) ns)")
 vline!([gap_time], label = "Gap = $gap ($(gap*dt) ns)")
 
-savefig("Trapfilter_Cs_$(peakno)_av_$(av)_gap_$(gap).png")
+#savefig("Trapfilter_Cs_$(peakno)_av_$(av)_gap_$(gap).png")
 
-
-
-
-
-
-#ENERGY SPECTRUM
-#=
 ADC_Counts =  maximum(f_)
 println("ADC counts returned by filter: $(ADC_Counts)")
 
-threshold = 20
 
-Max_trapezoids = @call_max_height(f_, threshold)
+Max_trapezoids = Max_TrapFilter.@call_max_height(f_, threshold)
 
 println("ADC counts returned by filter: $(Max_trapezoids)")
 
 
-
 #annotate!(500, 300, text("Energy = $(maximum(1.09 * TrapezoidalChargeFilter(av,gap)(tc[peakno]))) keV", :blue, 10))
+=#
+
+#PLOT TRAPEZOIDS RETURNED BY FILTER
 
 #plot(TrapezoidalChargeFilter(av,gap).(tc)[1:10], xlabel = "Time in ns", ylabel = "Signal after Trapezoid Filter")
 
 
 
+#ENERGY SPECTRUM
+#=
 filtered_Trapezoids = TrapezoidalChargeFilter(av, gap).(tc)
 
 # This returns a vector of vectors (one peak can have 2 max if overlapped)
 
-Max_wfrm = @call_max_height(filtered_Trapezoids, threshold)
+Max_wfrm = Max_TrapFilter.@call_max_height(filtered_Trapezoids, threshold)
 filtered_results = filter(x -> x !== nothing, Max_wfrm)
 println("My trapezoids max: $(Max_wfrm[1:11])")
 
