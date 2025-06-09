@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Pass number to Julia script
-n=7
+n=0
 
 julia --project=. Pulse_Spectrum_TrapFilter_allkeys.jl $n
 
-sleep 4
+#sleep 4
 
-n=8
+#n=8
 
-julia --project=. Pulse_Spectrum_TrapFilter_allkeys.jl $n
+#julia --project=. Pulse_Spectrum_TrapFilter_allkeys.jl $n
