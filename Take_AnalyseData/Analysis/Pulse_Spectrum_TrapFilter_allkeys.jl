@@ -11,6 +11,7 @@ using Revise
 using RadiationDetectorDSP
 using LegendDSP
 using LinearAlgebra
+using LaTeXStrings
 
 include("Max_TrapFilter.jl")
 using .Max_TrapFilter
@@ -57,11 +58,11 @@ end
 #This step in terminal shows the keys
 #choose_key = ["1","2","3"]
 #choose_key = ["4","5","6"]
-choose_key = ["7","8","9"]
+#choose_key = ["7","8","9"]
 
 t = lh5open(file) do h
-  #Dict(key => h[key][:] for key in keys(h))
-  Dict(key => h[key][:] for key in choose_key)
+  Dict(key => h[key][:] for key in keys(h))
+  #Dict(key => h[key][:] for key in choose_key)
 end
 
 num_keys = length(keys(t))
@@ -98,7 +99,7 @@ plot(0:4:1200*4-4, corrected_waveforms[1:10], xlabel = "Time in ns", ylabel = "S
 
 
 
-#ADC SPECTRUM
+#ADC SPECTRUM********************************
 
 threshold = 20
 
@@ -121,14 +122,18 @@ flat_max_adcs = collect(Iterators.flatten(filtered_results))
 #range1 = 600
 #range2 = 615
 
-range1 = 250
-range2 = 400
+#range1 = 250
+#range2 = 400
 
-range1 = 325
-range2 = 340
+#range1 = 325
+#range2 = 340
 
-range1fit = 327
-range2fit = 335
+range1 = 655
+range2 = 670
+
+range1fit = 658
+range2fit = 663
+
 
 # spectrum considering overlapped pulses
 stephist(flat_max_adcs, bins = range1:0.1:range2, fmt = :png, label = "",xlabel = "ADC Counts", ylabel = "Counts", xlimits=(range1,range2))
@@ -139,22 +144,63 @@ stephist(flat_max_adcs, bins = range1:0.1:range2, fmt = :png, label = "",xlabel 
 #stephist(max_adc_notresolving, bins = 0:1000, fmt = :png, label = "",xlabel = "ADC Counts", ylabel = "Counts", xlimits=(0,700))
 
 
-#FIT CALIBRATION
 
+
+#ENERGY SPECTRUM********************************
+
+Energy_calib = (1.10078168941052 .* flat_max_adcs) .-6.348613639903226
+
+#applying a threshold for the max, we can get 2 max per signal if overlapped pulses
+stephist(Energy_calib, bins = 0:0.1:1000, fmt = :png,xlabel = "Energy [keV]", ylabel = "Counts", xlimits=(range1,range2), ylimits = (0,10000), label="Calibrated data")
+
+#plot with just maximum of the trapezoids (one per signal)
+#stephist(1.09 .* max_adc_notresolving, bins = 0:1:1000, fmt = :png, label = "",xlabel = "Energy [keV]", ylabel = "Counts", xlimits=(0,500), ylimits = (0,10000))
+
+# Ba lines
+#vline!([30.97, 80.9979, 276.3992, 302.8512, 356.0134,383.8491], label=L"\textbf{^{133}\mathrm{\textbf{Ba}}\ \mathrm{\textbf{lines}}}")
+#vline!([30.97, 80.9979, 276.3992, 302.8512, 356.0134,383.8491] .+ 30.97, label=L"\textbf{^{133}\mathrm{\textbf{Ba}}\ \mathrm{\textbf{lines + 31 keV}}}")
+#vline!([30.97, 80.9979, 276.3992, 302.8512, 356.0134,383.8491] .+ 80.9979, label=L"\textbf{^{133}\mathrm{\textbf{Ba}}\ \mathrm{\textbf{lines + 81 keV}}}")
+
+#Cs line
+Etrue_Cs = 661.659
+#vline!([Etrue_Cs], label=L"\textbf{^{137}\mathrm{\textbf{Cs}}\ \mathrm{\textbf{line}}}")
+
+
+#savefig("BaSpectrum_av_$(av)_gap_$(gap)_maxvalue_range0-500.png")
+#savefig("BaSpectrumE_av_$(av)_gap_$(gap)_threshold_$(threshold)_range0-500_Cstaubaseline_key1key2key3_1.10calib-6.35_BaLines.png")
+#savefig("CsSpectrumE_av_$(av)_gap_$(gap)_threshold_$(threshold)_range640-685_Cstaubaseline_file1_1.10calib-6.35_CsLine.pdf")
+#savefig("CsSpectrumE_av_$(av)_gap_$(gap)_threshold_$(threshold)_range640-685_Cstaubaseline_file1_1.10calib-6.35_CsLine.png")
+
+
+
+#FIT CALIBRATION********************************
+
+#Fit ADCs
+#=
 subsetpeak = flat_max_adcs[(flat_max_adcs .> range1) .& (flat_max_adcs .< range2)]
-
 hist = fit(Histogram, flat_max_adcs, range1fit:0.1:range2fit)
 xs = hist.edges[1][1:end-1]  # bin left edges
 ys = hist.weights            # bin counts
+# Initial guess: amplitude, mean, sigma
+p0 = [maximum(ys), mean(subsetpeak), std(subsetpeak)]
+=#
+
+#Fit Energy
+hist = fit(Histogram, Energy_calib, range1fit:0.1:range2fit)
+xs = hist.edges[1][1:end-1]  # bin left edges
+ys = hist.weights            # bin counts
+# Initial guess: amplitude, mean, sigma
+p0 = [maximum(ys), mean(Energy_calib), std(Energy_calib)]
+
+
+println("Fit par before fit: $(p0)")
+
 
 xplot = range(range1, range2; length=1000)  # Full plot range
 
 # Gaussian function: p = [amplitude, mean, sigma]
 gauss(x, p) = p[1] * exp.(-(x .- p[2]).^2 ./ (2 * p[3]^2))
 
-# Initial guess: amplitude, mean, sigma
-p0 = [maximum(ys), mean(subsetpeak), std(subsetpeak)]
-println("Fit par before fit: $(p0)")
 
 fith = curve_fit(gauss, xs, ys, p0)
 p_fit = fith.param
@@ -195,28 +241,15 @@ cov = estimate_covar(fith)
 param_errors = sqrt.(diag(cov))
 println("Fit errors: mean: $mean_fit +- $(param_errors[2]), sigma: $sigma_fit +- $(param_errors[3]), entries: $n_entries")
 
+#Relative error Cs
+
+relE = abs(((mean_fit - Etrue_Cs)/Etrue_Cs )*100)
+
 # Overlay fit
-plot!(xplot, gauss(xplot, p_fit), label="Gaussian Fit", lw=2, color=:red, xlabel = "ADC Counts", ylabel = "Counts")
-vline!([mean_fit], label="mean = $(round(mean_fit, digits=4)) ± $(round(param_errors[2], digits=4)) \nsigma = $(round(sigma_fit, digits=4)) ± $(round(param_errors[3], digits=4))")
+plot!(xplot, gauss(xplot, p_fit), label="Gaussian Fit: \nmean = $(round(mean_fit, digits=3)) ± $(round(param_errors[2], digits=3)) \nσ = $(round(sigma_fit, digits=3)) ± $(round(param_errors[3], digits=3)) \nχ² / ndf = $(round(chi2_reduced, digits=2)) \n∆E = $(round(relE, digits=3)) %", lw=2, color=:red, xlabel = "Energy [keV]", ylabel = "Counts")
+#vline!([mean_fit], label="mean = $(round(mean_fit, digits=3)) ± $(round(param_errors[2], digits=3))")
 
 
 #savefig("BaADCSpectrum_276keV_av_$(av)_gap_$(gap)_file$(n)_key1key2.png")
-savefig("BaADCSpectrum_356keV_av_20_gap_300_file0_key789.png")
-
-
-
-#ENERGY SPECTRUM
-#=
-#applying a threshold for the max, we can get 2 max per signal if overlapped pulses
-stephist(1.09 .* flat_max_adcs, bins = 0:0.1:1000, fmt = :png, label = "",xlabel = "Energy [keV]", ylabel = "Counts", xlimits=(0,500), ylimits = (0,2500))
-
-#plot with just maximum of the trapezoids (one per signal)
-#stephist(1.09 .* max_adc_notresolving, bins = 0:1:1000, fmt = :png, label = "",xlabel = "Energy [keV]", ylabel = "Counts", xlimits=(0,500), ylimits = (0,10000))
-
-vline!([31,81,276,302,356,383], label = "133Ba lines")
-vline!([31,81,276,302,356,383] .+ 31, label = "133Ba lines + 31 keV")
-vline!([31,81,276,302,356,383] .+ 81, label = "133Ba lines + 81 keV")
-
-#savefig("BaSpectrum_av_$(av)_gap_$(gap)_maxvalue_range0-500.png")
-#savefig("BaSpectrumADCsameasE_av_$(av)_gap_$(gap)_threshold_$(threshold)_range0-500_Cstaubaseline_key1key2key3_1.09calib_allBaLines.png")
-=#
+savefig("Cs_ESpectrum_av_$(av)_gap_$(gap)_file$(n)_allkeys_fit_zoom.png")
+savefig("Cs_ESpectrum_av_$(av)_gap_$(gap)_file$(n)_allkeys_fit_zoom.pdf")
