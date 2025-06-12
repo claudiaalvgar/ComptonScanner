@@ -116,21 +116,16 @@ send_cmd(sock2, ":FUNCtion:RESistance")
 io = open(outfile,"w")
 
 try
-    write(io, "t1,resistance_seg4,range_seg4,t2,resistance_reference,range_reference,t3,pt100-1,pt100-2,t4\n")
+    write(io, "timestamp,resistance_seg4,resistance_reference,pt100-1,pt100-2\n")
     #for i in 1:N
     while true
-	timestamp1 = Dates.format(now(UTC), "YYYYmmddTHHMMSSZ")
-	resistance_mult1  = query(sock1, ":MEASure:RESistance?")
-	resistance_range1 = query(sock1, ":MEASure:RESistance:RANGe?")
-	timestamp2 = Dates.format(now(UTC), "YYYYmmddTHHMMSSZ")
-	resistance_mult2  = query(sock2, ":MEASure:RESistance?")
-	resistance_range2 = query(sock2, ":MEASure:RESistance:RANGe?")
-	timestamp3 = Dates.format(now(UTC), "YYYYmmddTHHMMSSZ")
+        resistance_mult1 = query(sock1, ":MEASure:RESistance?")
+	resistance_mult2 = query(sock2, ":MEASure:RESistance?")
 	temperatures = get_temperatures(lake_name)
-	timestamp4 = Dates.format(now(UTC), "YYYYmmddTHHMMSSZ")
-	println(io, "$timestamp1,$resistance_mult1,$resistance_range1,$timestamp2,$resistance_mult2,$resistance_range2,$timestamp3, $(temperatures[1]), $(temperatures[2]),$timestamp4")
+	timestamp = Dates.format(now(UTC), "YYYYmmddTHHMMSSZ")
+	println(io, "$timestamp,$resistance_mult1,$resistance_mult2, $(temperatures[1]), $(temperatures[2])")
 	flush(io)
-	println("[$timestamp1] Resistance: $resistance_mult1 Ω, (range: $resistance_range1) $resistance_mult2 Ω (range: $resistance_range2),  Temperatures: $(temperatures[1]), $(temperatures[2])")
+	println("[$timestamp] Resistance: $resistance_mult1 Ω, $resistance_mult2 Ω,  Temperatures: $(temperatures[1]), $(temperatures[2])")
         sleep(t)
     end
 catch e
