@@ -1,5 +1,5 @@
 using LegendHDF5IO
-1;95;0cusing Statistics
+using Statistics
 using ProgressMeter
 using Plots
 using StatsBase
