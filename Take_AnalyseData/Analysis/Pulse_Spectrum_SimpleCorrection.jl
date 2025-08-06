@@ -8,8 +8,9 @@ using LsqFit
 using RadiationDetectorDSP
 using LegendDSP
 
-file = "/remote/ceph/user/a/alvarez/ComptonScanner/Ba_Data/raw_data/133Ba_Compton_R_0.0mm_Z_-0.0mm_Phi_138.7deg_T_80.0K_measuretime_300sec-ICPC-20250522T144857Z.lh5"
-
+#file = "/remote/ceph/user/a/alvarez/ComptonScanner/Ba_Data/raw_data/133Ba_Compton_R_0.0mm_Z_-0.0mm_Phi_138.7deg_T_80.0K_measuretime_300sec-ICPC-20250522T144857Z.lh5"
+#file="/home/gelab/Measurements/ComptonScanner/Data/Ba_Data/raw_data/132Ba_Compton_R_0.0mm_Z_-0.0mm_Phi_138.7deg_T_80.0K_measuretime_300sec-ICPC-20250522T144857Z.lh5"
+file="/home/gelab/Claudia/Data/R_200.0mm_Z_0.0mm_Phi_67.2deg_T_80.0K_measuretime_60sec_HV_3200V-ICPC-20250806T141340Z.lh5"
 t = lh5open(file) do h
     h["1"][:]
 end
@@ -55,7 +56,7 @@ fith = curve_fit(gauss, xs, ys, p0)
 p_fit = fith.param
 
 # Step histogram
-stephist(b, bins=8000:1:15000, label="Data", normalize=false, xlabel = "ADC Counts")
+stephist(b, bins=8000:1:15000, label="Data", normalize=false, xlabel = "ADC Counts");
 
 n_entries = sum(hist.weights)
 mean_fit = p0[2]
@@ -65,10 +66,10 @@ println("mean: $mean_fit, entries: $n_entries")
 plot!(xs, gauss(xs, p_fit), label="Gaussian Fit", lw=2, color=:red)
 vline!([mean_fit], label="mean = $(round(mean_fit, digits=2))")
 
-=#
+
 # mean decay constant
 
-#τ = broadcast(p -> LegendDSP.tailstats(p .- mean_fit, 900, 1200).τ, t.samples[findall(t.channel .== 1 .&& t.energy .> 1.5e6)])
+τ = broadcast(p -> LegendDSP.tailstats(p .- mean_fit, 900, 1200).τ, t.samples[findall(t.channel .== 1 .&& t.energy .> 1.5e6)])
 lengths = [length(s) for s in t.samples]
 
 τ = broadcast(p -> LegendDSP.tailstats(p .- truebaseline_previousdata, 900, 1200).τ, t.samples[findall(t.channel .== 1 .&& lengths .> 1000)])
@@ -76,7 +77,7 @@ lengths = [length(s) for s in t.samples]
 #stephist(τ, bins = 12000:100:20000, xlabel = "τ [ADC]")
 stephist(τ*dt, bins = 40000:400:80000, xlabel = "τ [ns]")
 vline!([59000], label="mean = 59000 ns")
-
+=#
 truebaseline_previousdata = 8546.0
 tau_alg = 59000
 
@@ -95,6 +96,6 @@ Ec = @showprogress map(p -> let pc = InvCRFilter(tau_alg)(p .- truebaseline_prev
     mean(pc[1000:1200]) - mean(pc[1:200])
 end, t.samples[findall(t.channel .== 1)]);
 
-stephist(Ec, bins = 0:1:1200, fmt = :png, title = "133Ba spectrum", size = (600,400), xlabel = "Uncalibrated energy in ADC units", ylabel = "Counts ADC unit", label = "")
+stephist(Ec, bins = 0:1:2000, fmt = :png, title = "133Ba spectrum", size = (600,400), xlabel = "Uncalibrated energy in ADC units", ylabel = "Counts ADC unit", label = "")
 
 #savefig("CorrectedSignal_Ba.png")
