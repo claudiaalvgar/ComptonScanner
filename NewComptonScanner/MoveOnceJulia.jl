@@ -1,7 +1,20 @@
 using TrinamicMotionControl
+include("tmcl_control_layer.jl")
+using .TMCLControlLayer
 
-port = TMCLPort("COM3", 9600)
-
+#(USB serial device name assigned by the system when you plug in the motor controller, the speed of communication between your Mac and the motor controller)
+port = TMCLPort("/dev/cu.usbserial-XXXX", 115200)
+#=
+GP10 = state machine register
+GP10 value	Meaning
+0	idle / done
+1	move
+2	home
+3	init
+4	power on
+5	power off
+99	error
+=#
 # ===== Helper function =====
 function wait_for_idle(port)
     while true
