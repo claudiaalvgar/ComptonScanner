@@ -116,17 +116,19 @@ StartMove:
 WaitMove:
     // Axis 0
     GAP 1, 0
+    CALCX LOAD
     GAP 209, 0
-    CALC SUB
+    CALCX SUB
     COMP 1000              // tune this!
     JC GT, ErrorHalt
     COMP -1000
     JC LT, ErrorHalt
 
     // Axis 1
-    GAP 1, 1
-    GAP 209, 1
-    CALC SUB
+    GAP 1,1        // actual position -> accu
+    CALCX LOAD     // store into X
+    GAP 209,1      // encoder position -> accu
+    CALCX SUB      // accu = encoder - actual
     COMP 1000
     JC GT, ErrorHalt
     COMP -1000
@@ -134,12 +136,14 @@ WaitMove:
 
     // Axis 2
     GAP 1, 2
+    CALCX LOAD
     GAP 209, 2
-    CALC SUB
+    CALCX SUB
     COMP 1000
     JC GT, ErrorHalt
     COMP -1000
     JC LT, ErrorHalt
+
 
     // ============================================================
     // POSITION REACHED CHECK
@@ -371,22 +375,7 @@ WaitInit:
     JC ZE,WaitInit
 
     // ========================================================================
-    // STEP 5: MOTION PARAMETERS
-    // ========================================================================
-    //SAP 4,0,51200
-    //SAP 5,0,51200
-    //SAP 17,0,51200
-
-    //SAP 4,1,51200
-    //SAP 5,1,51200
-    //SAP 17,1,51200
-
-    //SAP 4,2,51200
-    //SAP 5,2,51200
-    //SAP 17,2,51200
-
-    // ========================================================================
-    // STEP 6: READY SIGNAL
+    // STEP 5: READY SIGNAL
     // ========================================================================
     SGP 10,2,0
     WAIT TICKS, 0, 1
@@ -402,6 +391,19 @@ PowerOn:
     SAP 210, 0, 2000
     SAP 210, 1, 2000
     SAP 210, 2, 2000
+
+    // Set motion parameters
+    SAP 4,0,51200
+    SAP 5,0,51200
+    SAP 17,0,51200
+
+    SAP 4,1,51200
+    SAP 5,1,51200
+    SAP 17,1,51200
+
+    SAP 4,2,51200
+    SAP 5,2,51200
+    SAP 17,2,51200
 
     // 2. Apply currents
     SAP 6, 0, 64
@@ -497,6 +499,9 @@ WaitLoop:
 // ========================================================================
 
 PowerOff:
+    MST 0                   // Motor STop Axis 0
+    MST 1                   // Motor STop Axis 1
+    MST 2                   // Motor STop Axis 2
 
     // ====================================================================
     // STEP 1: SAFELY DISABLE CLOSED LOOP
