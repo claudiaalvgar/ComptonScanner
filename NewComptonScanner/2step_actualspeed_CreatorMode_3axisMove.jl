@@ -1,0 +1,79 @@
+JA Main
+
+// =====================================================
+// MAIN
+// =====================================================
+Main:
+
+    CSUB StartMove
+
+STOP
+
+// =====================================================
+// START MOVE
+// =====================================================
+StartMove:
+
+    SCO 0,0,100000
+    SCO 0,1,100000
+    SCO 0,2,100000
+
+    MVP COORD,0,0
+    MVP COORD,1,0
+    MVP COORD,2,0
+
+    JA MonitorLoop
+
+// =====================================================
+// MONITOR LOOP
+// =====================================================
+MonitorLoop:
+    
+//AXIS 0
+GAP 8,0
+COMP 1
+JC EQ,Axis1
+
+GAP 3,0
+COMP 0
+JC EQ,EmergencyStop
+//AXIS 1
+Axis1:
+
+    GAP 8,1
+    COMP 1
+    JC EQ,Axis2
+
+    GAP 3,1
+    COMP 0
+    JC EQ,EmergencyStop
+//AXIS 2
+Axis2:
+
+    GAP 8,2
+    COMP 1
+    JC EQ,ContinueLoop
+
+    GAP 3,2
+    COMP 0
+    JC EQ,EmergencyStop
+ContinueLoop:
+
+    WAIT TICKS,0,1
+    JA MonitorLoop
+
+
+// =====================================================
+// STOP EVERYTHING
+// =====================================================
+EmergencyStop:
+ 
+    SAP 17,0, 100000
+    SAP 17,1, 100000
+    SAP 17,2, 100000
+
+    MST 0
+    MST 1
+    MST 2
+
+STOP
