@@ -27,7 +27,24 @@
 
 
 // ========================================================================
+// --- VARIABLES ---
+Target_Pos = 0
+Actual_Pos = 1
+Target_Speed = 2
+Actual_Speed = 3
+Max_Speed = 4
+Max_Acceleration = 5
+Max_Current = 6
+Sandby_Current = 7
+TMCL_Command = 10
+Max_deceleration = 17
+Encoder_pos = 209
+Encoder_resolution = 210
+Max_Encoder_Deviation = 212
 
+
+
+    
 // --- INITIALIZATION ---
     SGP 10, 2, 0            // Ensure controller starts in a defined communication/state mode
 

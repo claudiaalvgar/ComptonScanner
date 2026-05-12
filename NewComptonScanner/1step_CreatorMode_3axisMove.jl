@@ -5,7 +5,7 @@ Main:
     CSUB DisableClosedLoop
     CSUB EnableClosedLoop
     // homing here
-    CSUB SmallMove
+    // CSUB SmallMove
 STOP
 
 PowerOn:
