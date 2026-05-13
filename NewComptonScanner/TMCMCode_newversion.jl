@@ -287,7 +287,7 @@ StartInit:
     AAP 124,1,65536
     AAP 124,2,65536
 
-    GGP Max_Encoder_Deviation, 2
+    GGP Max_Encoder_Deviation, 2     //Needed for Homing and for movement: When the actual position (parameter 1) and the encoder position (parameter 209) differ more than set here the motor will be stopped. This function is switched off when the maximum deviation is set to zero.
     AAP 212,0,1000
     AAP 212,1,1000
     AAP 212,2,1000
@@ -333,6 +333,31 @@ DisableClosedLoop:
         
     SGP 10, 2, 0
     JA MainLoop
+
+DisableClosedLoop_Routine:
+
+    SAP 129,0,0
+    SAP 129,1,0
+    SAP 129,2,0
+
+    WaitDisableClosedLoop_Routine:
+
+    WAIT TICKS,0,1
+    GAP 133,0
+    COMP 0
+    JC NE, WaitDisableClosedLoop_Routine
+
+    WAIT TICKS,0,1
+    GAP 133,1
+    COMP 0
+    JC NE, WaitDisableClosedLoop_Routine
+
+    WAIT TICKS,0,1
+    GAP 133,2
+    COMP 0
+    JC NE, WaitDisableClosedLoop_Routine
+
+    RSUB
 
 // ========================================================================
 // 4. ENABLE CLOSED LOOP
@@ -390,20 +415,29 @@ EnableClosedLoop:
 // 5. START HOME
 // ========================================================================
 
-    // IM HERE
+// 2 options below
+
 // ========================================================================
 // 6. START MOVE
 // ========================================================================
 
 StartMove:
 
-    SCO 0,0,100000
-    SCO 0,1,100000
-    SCO 0,2,100000
+    SGP 10, 2, 0            // Reset State to 0 (Idle/Done) clear command immediately
 
-    MVP COORD,0,0
-    MVP COORD,1,0
-    MVP COORD,2,0
+    GGP Max_Speed, 2
+    AAP 4,0
+    AAP 4,1
+    AAP 4,2
+
+    GGP Target_Pos, 2
+    AAP 0,0
+    AAP 0,1
+    AAP 0,2
+    
+    MVP ABS,0,0
+    MVP ABS,1,0
+    MVP ABS,2,0
 
     JA MonitorLoop
 
@@ -445,8 +479,8 @@ StartMove:
 
     ContinueLoop:
 
-    WAIT TICKS,0,1
-    JA MonitorLoop
+      WAIT TICKS,0,1
+      JA MonitorLoop
 
 
    // =====================================================
@@ -466,138 +500,55 @@ StartMove:
    SGP 10, 2, 0
    JA MainLoop
 
+// ========================================================================
+// 7. POWER OFF
+// ========================================================================
 
-
-
-
-
-
-
-
-
-
+PowerOff:
     
+    MST 0                   // Motor STop Axis 0
+    MST 1                   // Motor STop Axis 1
+    MST 2                   // Motor STop Axis 2
+    WAIT TICKS,0,10
+    CSUB DisableClosedLoop_Routine
+    SAP 6, 0, 0
+    SAP 6, 1, 0
+    SAP 6, 2, 0
+    SAP 7, 0, 0
+    SAP 7, 1, 0
+    SAP 7, 2, 0
 
-
-        
-
-
-
-
-
-
-        // IM HERE
-
-
-
-
-
-        
-
-
-
+   WAIT TICKS,0,10
+   SGP 10, 2, 0
+   JA MainLoop
         
 // ========================================================================
-// 0. EXIT
+// 999. END LOOP OF TMCM PROGRAM - SOP FIRMWARE
 // ========================================================================
+
 EndLoop:
+
     MST 0
     MST 1
     MST 2
     STOP                     // Stops execution of the TMCL program
 
-// ========================================================================
-// EMERGENCY HALT ROUTINE
-// ========================================================================
-ErrorHalt:
-    MST 0                   // Motor STop Axis 0
-    MST 1                   // Motor STop Axis 1
-    MST 2                   // Motor STop Axis 2
-
-    CALL CL_Disable
-        
-    SGP 10, 2, 99           // Set State to 99 to alert Julia of the jam
-    JA ErrorState           // go directly into error handling state
-
-ErrorState:
-    GGP 10, 2
-    COMP 0
-    JC NE, ErrorState
-
-    CALL CL_Disable
-
-    JA MainLoop
-// ========================================================================
-// 1. SYNCHRONOUS MOVEMENT ROUTINE
-// ========================================================================
-StartMove:
-    SGP 10, 2, 0            // Reset State to 0 (Idle/Done) clear command immediately
-    // Load Speed (GP 1) into Accumulator and apply to all axes (AP 4)
-    GGP 4, 2
-    AAP 4, 0                // Set Axis 0 Max Positioning Speed
-    AAP 4, 1                // Set Axis 1 Max Positioning Speed
-    AAP 4, 2                // Set Axis 2 Max Positioning Speed
-
-    // Load Target Pos (GP 0) into Accumulator and apply to all axes (AP 0)
-    // Note: Writing to AP 0 automatically triggers the trajectory generator
-    GGP 0, 2
-    AAP 0, 0                // Set target position and Move Axis 0 towards it
-    AAP 0, 1                // Move Axis 1
-    AAP 0, 2                // Move Axis 2
-
-WaitMove:
-    // Axis 0
-    GAP 1, 0
-    CALCX LOAD
-    GAP 209, 0
-    CALCX SUB
-    COMP 1000              // tune this!
-    JC GT, ErrorHalt
-    COMP -1000
-    JC LT, ErrorHalt
-
-    // Axis 1
-    GAP 1,1        // actual position -> accu
-    CALCX LOAD     // store into X
-    GAP 209,1      // encoder position -> accu
-    CALCX SUB      // accu = encoder - actual
-    COMP 1000
-    JC GT, ErrorHalt
-    COMP -1000
-    JC LT, ErrorHalt
-
-    // Axis 2
-    GAP 1, 2
-    CALCX LOAD
-    GAP 209, 2
-    CALCX SUB
-    COMP 1000
-    JC GT, ErrorHalt
-    COMP -1000
-    JC LT, ErrorHalt
 
 
-    // ============================================================
-    // POSITION REACHED CHECK
-    // ============================================================
 
-    GAP 8, 0
-    COMP 1
-    JC NE, WaitMove
 
-    GAP 8, 1
-    COMP 1
-    JC NE, WaitMove
 
-    GAP 8, 2
-    COMP 1
-    JC NE, WaitMove
-        
-    WAIT TICKS, 0, 1
-    JA MainLoop
+
+
+
+
+
+
+
+
 
 // ========================================================================
-// 2. SYNCHRONOUS HOMING (Master Axis 0 Strategy) a “reference search” (homing)
+// SYNCHRONOUS HOMING (Master Axis 0 Strategy) a “reference search” (homing)
 // ========================================================================
 StartHome:
     // Apply Homing Search Speed (GP 1) to all axes
@@ -614,38 +565,6 @@ StartHome:
     JA WaitHome
 
 WaitHome:
-    // ================================================================        
-    // --- Jam Protection (During Homing) ---
-    // deviation = AP1 - AP209
-    // ================================================================
-
-    // Axis 0
-    GAP 1, 0          // actual position
-    GAP 209, 0        // encoder position
-    CALC SUB
-    COMP 1000         // threshold (tune this!)
-    JC GT, ErrorHalt
-    COMP -1000
-    JC LT, ErrorHalt
-
-    // Axis 1
-    GAP 1, 1
-    GAP 209, 1
-    CALC SUB
-    COMP 1000
-    JC GT, ErrorHalt
-    COMP -1000
-    JC LT, ErrorHalt
-
-    // Axis 2
-    GAP 1, 2
-    GAP 209, 2
-    CALC SUB
-    COMP 1000
-    JC GT, ErrorHalt
-    COMP -1000
-    JC LT, ErrorHalt
-
     // --- Monitor Left Limit Switch of Axis 0 ---
     GAP 9, 0                // Move until dedicated reference sensor is hit
     COMP 1                  // 1 = Switch is pressed/active
@@ -658,68 +577,165 @@ WaitHome:
     MST 2
 
     // Set the internal step counters to 0
-    SAP 1, 0, 0             // Set Actual Position Axis 0 to 0
-    SAP 1, 1, 0             // Set Actual Position Axis 1 to 0
-    SAP 1, 2, 0             // Set Actual Position Axis 2 to 0
-    
-    // Set the encoder counters to 0
-    SAP 209, 0, 0           // Set Encoder Position Axis 0 to 0
-    SAP 209, 1, 0           // Set Encoder Position Axis 1 to 0
-    SAP 209, 2, 0           // Set Encoder Position Axis 2 to 0
 
-    // --- Homing Successful ---
-    WAIT TICKS, 0, 1
+    SAP 209,0,0
+    SAP 209,1,0
+    SAP 209,2,0
+
+    GAP 209,0
+    AAP 1,0
+
+    GAP 209,1
+    AAP 1,1
+
+    GAP 209,2
+    AAP 1,2
+
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+
     SGP 10, 2, 0            // Reset State to 0 (Idle/Done)
     JA MainLoop
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ========================================================================
-// 5. POWER OFF ROUTINE
+// SYNCHRONIZED HOMING ROUTINE
+// Axis 0 = Master Homing Axis
+// One home switch at bottom
+// All axes move together vertically
 // ========================================================================
 
-PowerOff:
-    MST 0                   // Motor STop Axis 0
-    MST 1                   // Motor STop Axis 1
-    MST 2                   // Motor STop Axis 2
+StartHome:
 
-    // ====================================================================
-    // STEP 1: SAFELY DISABLE CLOSED LOOP
-    // ====================================================================
+    // ------------------------------------------------------------
+    // Temporarily relax encoder deviation during homing
+    // (prevents nuisance following errors)
+    // ------------------------------------------------------------
 
-    CALL CL_Disable
+    SAP 212,0,5000
+    SAP 212,1,5000
+    SAP 212,2,5000
 
+    // ------------------------------------------------------------
+    // Configure Reference Search for AXIS 0 (SWITCH IN 0)
+    // ------------------------------------------------------------
 
-    // ====================================================================
-    // STEP 2: DROP ALL CURRENTS TO ZERO
-    // ====================================================================
+    // Mode 1 (left) 65 (right):
+    // Search home switch in POSITIVE DIRECTION (TO THE RIGHT = DOWNWARDS)
 
-    SAP 6, 0, 0
-    SAP 6, 1, 0
-    SAP 6, 2, 0
+    SAP 193,0,65
 
-    SAP 7, 0, 0
-    SAP 7, 1, 0
-    SAP 7, 2, 0
+    // Fast search speed
+    SAP 194,0,2000
 
+    // Slow precision latch speed
+    SAP 195,0,200
 
-    // ====================================================================
-    // STEP 3: RESET STATE MACHINE
-    // ====================================================================
+    // Apply same velocity to other 2 axes
+    SAP 4,1,2000
+    SAP 4,2,2000
 
-    SGP 10, 2, 0
+    ROR 1
+    ROR 2
 
+    RFS START,0
 
-    // ====================================================================
-    // STEP 4: RETURN TO MAIN LOOP
-    // ====================================================================
+WaitHome:
+
+    RFS STATUS,0
+    COMP 0
+    JC EQ,HomeFinished
+
+    // Optional:
+    // If one of the other axis stalls unexpectedly,
+
+    GAP 3,1
+    COMP 0
+    JC EQ,MonitorLoopHoming
+
+    GAP 3,2
+    COMP 0
+    JC EQ,MonitorLoopHoming
+
+    WAIT TICKS,0,1
+    JA WaitHome
+
+HomeFinished:
+
+    // Stop slave axes
+    MST 1
+    MST 2
+
+    WAIT TICKS,0,10
+
+    // Zero all step positions
+    SAP 209,0,0
+    SAP 209,1,0
+    SAP 209,2,0
+
+    GAP 209,0
+    AAP 1,0
+
+    GAP 209,1
+    AAP 1,1
+
+    GAP 209,2
+    AAP 1,2
+
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    WAIT TICKS,0,10
+
+    // Restore normal encoder deviation protection
+
+    SAP 212,0,1000
+    SAP 212,1,1000
+    SAP 212,2,1000
+
+    // Homing complete
+    SGP 10,2,0
 
     JA MainLoop
 
-// ========================================================================
-// 6. DISABLE CLOSED LOOP
-// ========================================================================
+MonitorLoopHoming:
+            
+    SAP 17,0, 100000
+    SAP 17,1, 100000
+    SAP 17,2, 100000
 
-DisableClosedLoop:
-   CALL CL_Disable
-   SGP 10, 2, 0
-   JA MainLoop
+    MST 0
+    MST 1
+    MST 2
+
+    WAIT TICKS,0,10
+    SGP 10,2,99
+
+    JA MainLoop

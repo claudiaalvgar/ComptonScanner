@@ -5,9 +5,56 @@ JA Main
 // =====================================================
 Main:
 
-    CSUB StartMove
-
+    CSUB StartCalibration // 1st ONE MOTOR AT A TIME : Move each axis separately until one of them hit the metal block and it hard stops
+    //CSUB ReferenceZero    // 2nd Set the actual motor position and encoder position to 0 - Reference position
+    //CSUB StartMove
 STOP
+
+// =====================================================
+// START MOVE
+// =====================================================
+StartCalibration:
+
+    //SCO 0,0,10000000
+    //MVP COORD,0,0
+
+    //SCO 0,1,10000000
+    //MVP COORD,1,0
+
+    //SCO 0,2,10000000
+    //MVP COORD,2,0
+
+RSUB
+
+// =====================================================
+// REFERENCE ZERO
+// =====================================================
+ReferenceZero:
+
+    SAP 209,0,0
+    SAP 209,1,0
+    SAP 209,2,0
+
+    GAP 209,0
+    AAP 1,0
+
+    GAP 209,1
+    AAP 1,1
+
+    GAP 209,2
+    AAP 1,2
+
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    WAIT TICKS,0,10
+RSUB
 
 // =====================================================
 // START MOVE
@@ -28,7 +75,7 @@ StartMove:
 // MONITOR LOOP
 // =====================================================
 MonitorLoop:
-    
+
 //AXIS 0
 GAP 8,0
 COMP 1
@@ -67,7 +114,7 @@ ContinueLoop:
 // STOP EVERYTHING
 // =====================================================
 EmergencyStop:
- 
+
     SAP 17,0, 100000
     SAP 17,1, 100000
     SAP 17,2, 100000
