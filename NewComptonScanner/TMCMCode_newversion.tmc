@@ -36,7 +36,7 @@ Actual_Speed = 3
 Max_Speed = 4
 Max_Acceleration = 5
 Max_Current = 6
-Sandby_Current = 7
+Standby_Current = 7
 TMCM_Command = 10
 Max_Deceleration = 17
 CLgamma_Vmin = 108
@@ -66,7 +66,7 @@ Max_velocity_Deviation = 213
 // ========================================================================
 SGP Max_Acceleration, 2, 51200
 SGP Max_Current, 2, 25
-SGP Sandby_Current, 2, 8
+SGP Standby_Current, 2, 8
 SGP TMCM_Command, 2, 0  // Ensure controller starts in a defined communication/state mode
 SGP Max_Deceleration, 2, 51200
 SGP CLgamma_Vmin, 2, 300000
@@ -161,7 +161,7 @@ PowerOn:
     AAP 6,1
     AAP 6,2
 
-    GGP Sandby_Current, 2
+    GGP Standby_Current, 2
     AAP 7,0
     AAP 7,1
     AAP 7,2

@@ -1,4 +1,4 @@
-Scripts for just a 1 run:
+# Scripts for just 1 run (No Julia command required):
 
 • 1st step run: 1step_CreatorMode_3axisMove.tmc to set up the closed loop and initial variables
 
@@ -12,6 +12,6 @@ Scripts for just a 1 run:
 
 • 3rd: Laststep_CreatorMode_3axisPowerOff.tmc will power off the 3 motors
 
-Script meant to be looping in the tmcm board waiting for julia inputs (not tested yet)
+# Script meant to be looping in the tmcm board waiting for julia inputs (not tested yet):
 
 TMCMCode_newversion.tmc
