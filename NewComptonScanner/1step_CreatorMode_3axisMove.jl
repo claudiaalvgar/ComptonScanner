@@ -212,24 +212,6 @@ EnableClosedLoop:
     WAIT TICKS,0,10
     RSUB
 
-SmallMove:
-
-    SCO 0,0,100000
-    SCO 0,1,100000
-    SCO 0,2,100000
-
-    MVP COORD,0,0
-    MVP COORD,1,0
-    MVP COORD,2,0
-
-    WAIT POS,0,0
-    WAIT POS,1,0
-    WAIT POS,2,0
-
-    WAIT TICKS,0,10
-
-RSUB
-
 PowerOff:
     MST 0                   // Motor STop Axis 0
     MST 1                   // Motor STop Axis 1

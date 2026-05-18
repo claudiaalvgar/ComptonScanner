@@ -5,22 +5,31 @@ JA Main
 // =====================================================
 Main:
 
-    CSUB StartMove
+    CSUB StartCalibrationMove // 1st 3 MOTOR AT A TIME since the platform is already attached in. First use calibration coordinates and then move
+    //CSUB ReferenceZero    // 2nd Set the actual motor position and encoder position to 0 - Reference position
 
 STOP
 
 // =====================================================
-// START MOVE
+// START CALIBRATION OR MOVE
 // =====================================================
-StartMove:
+StartCalibrationMove:
 
     //SAP 17,0,51200
     //SAP 17,1,51200
     //SAP 17,2,51200
 
-    SCO 0,0,100000
-    SCO 0,1,100000
-    SCO 0,2,100000
+    //WAIT TICKS,0,1
+
+    //Positive to go down
+    SCO 0,0,1000000
+    SCO 0,1,1000000
+    SCO 0,2,1000000
+
+    //Negative to go up
+    //SCO 0,0,-500000
+    //SCO 0,1,-500000
+    //SCO 0,2,-500000
 
     MVP COORD,0,0
     MVP COORD,1,0
@@ -32,7 +41,7 @@ StartMove:
 // MONITOR LOOP
 // =====================================================
 MonitorLoop:
-    
+
 //AXIS 0
 GAP 8,0
 COMP 1
@@ -71,7 +80,7 @@ ContinueLoop:
 // STOP EVERYTHING
 // =====================================================
 EmergencyStop:
- 
+
     SAP 17,0, 1000000
     SAP 17,1, 1000000
     SAP 17,2, 1000000
@@ -82,3 +91,32 @@ EmergencyStop:
 
 RSUB
 
+// =====================================================
+// REFERENCE ZERO
+// =====================================================
+ReferenceZero:
+
+    SAP 209,0,0
+    SAP 209,1,0
+    SAP 209,2,0
+
+    GAP 209,0
+    AAP 1,0
+
+    GAP 209,1
+    AAP 1,1
+
+    GAP 209,2
+    AAP 1,2
+
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    WAIT TICKS,0,10
+RSUB
