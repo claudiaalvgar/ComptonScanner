@@ -123,26 +123,4 @@ EmergencyStop:
     MST 1
     MST 2
 
-    WaitStopped:
-
-      // Axis 0
-      GAP 3,0
-      COMP 0
-      JC NE,WaitStopped
-
-      // Axis 1
-      GAP 3,1
-      COMP 0
-      JC NE,WaitStopped
-
-      // Axis 2
-      GAP 3,2
-      COMP 0
-      JC NE,WaitStopped
-
-      // Restore normal deceleration
-      SAP 17,0,51200
-      SAP 17,1,51200
-      SAP 17,2,51200
-
 RSUB
