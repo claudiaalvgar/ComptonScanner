@@ -4,10 +4,9 @@ JA Main
 // MAIN
 // =====================================================
 Main:
-
-    CSUB StartCalibration // 1st ONE MOTOR AT A TIME : Move each axis separately until one of them hit the metal block and it hard stops
-    //CSUB ReferenceZero    // 2nd Set the actual motor position and encoder position to 0 - Reference position
-    //CSUB StartMove
+    //CSUB ReferenceZero
+    //CSUB StartCalibration // 2nd ONE MOTOR AT A TIME : Move each axis separately until one of them hit the metal block and it hard stops
+    //CSUB ReferenceZero    // 3rd Set the actual motor position and encoder position to 0 - Reference position
 STOP
 
 // =====================================================
@@ -15,13 +14,24 @@ STOP
 // =====================================================
 StartCalibration:
 
-    //SCO 0,0,10000000
+    // Move up
+    //SCO 0,0,-100000
     //MVP COORD,0,0
 
-    //SCO 0,1,10000000
+    //SCO 0,1,-100000
     //MVP COORD,1,0
 
-    //SCO 0,2,10000000
+    //SCO 0,2,-100000
+    //MVP COORD,2,0
+
+    // Move down
+    SCO 0,0,100000
+    MVP COORD,0,0
+
+    //SCO 0,1,100000
+    //MVP COORD,1,0
+
+    //SCO 0,2,100000
     //MVP COORD,2,0
 
 RSUB
@@ -56,71 +66,3 @@ ReferenceZero:
     WAIT TICKS,0,10
 RSUB
 
-// =====================================================
-// START MOVE
-// =====================================================
-StartMove:
-
-    SCO 0,0,100000
-    SCO 0,1,100000
-    SCO 0,2,100000
-
-    MVP COORD,0,0
-    MVP COORD,1,0
-    MVP COORD,2,0
-
-    JA MonitorLoop
-
-// =====================================================
-// MONITOR LOOP
-// =====================================================
-MonitorLoop:
-
-//AXIS 0
-GAP 8,0
-COMP 1
-JC EQ,Axis1
-
-GAP 3,0
-COMP 0
-JC EQ,EmergencyStop
-//AXIS 1
-Axis1:
-
-    GAP 8,1
-    COMP 1
-    JC EQ,Axis2
-
-    GAP 3,1
-    COMP 0
-    JC EQ,EmergencyStop
-//AXIS 2
-Axis2:
-
-    GAP 8,2
-    COMP 1
-    JC EQ,ContinueLoop
-
-    GAP 3,2
-    COMP 0
-    JC EQ,EmergencyStop
-ContinueLoop:
-
-    WAIT TICKS,0,1
-    JA MonitorLoop
-
-
-// =====================================================
-// STOP EVERYTHING
-// =====================================================
-EmergencyStop:
-
-    SAP 17,0, 1000000
-    SAP 17,1, 1000000
-    SAP 17,2, 1000000
-
-    MST 0
-    MST 1
-    MST 2
-
-RSUB

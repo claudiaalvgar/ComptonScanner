@@ -107,17 +107,28 @@ StartInit:
     SAP 121,1,10000
     SAP 121,2,10000
 
+    // Caused the copper block calibration too agressive and the motor making noise
     SAP 115,0,3000
     SAP 115,1,3000
     SAP 115,2,3000
-
     SAP 116,0,20
     SAP 116,1,20
     SAP 116,2,20
-
     SAP 117,0,10
     SAP 117,1,10
     SAP 117,2,10
+
+    // New parameters only for copper block calibration, it doesn't work for hard stop by hand
+    //SAP 115,0,1200
+    //SAP 115,1,1200
+    //SAP 115,2,1200
+    //SAP 116,0,5
+    //SAP 116,1,5
+    //SAP 116,2,5
+    //SAP 117,0,2
+    //SAP 117,1,2
+    //SAP 117,2,2
+
 
     SAP 118,0,0
     SAP 118,1,0

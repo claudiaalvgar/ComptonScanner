@@ -5,6 +5,7 @@ JA Main
 // =====================================================
 Main:
 
+    //CSUB ReferenceZero
     CSUB StartMove
 
 STOP
@@ -13,10 +14,15 @@ STOP
 // START MOVE
 // =====================================================
 StartMove:
-
+   //This causes the hardstop to start movement going down
     //SAP 17,0,51200
     //SAP 17,1,51200
     //SAP 17,2,51200
+
+    // Restore normal deceleration only when axes are clear
+    //CSUB RestoreDecel
+
+    //WAIT TICKS,0,2
 
     SCO 0,0,100000
     SCO 0,1,100000
@@ -82,3 +88,69 @@ EmergencyStop:
 
 RSUB
 
+// =====================================================
+// REFERENCE ZERO
+// =====================================================
+ReferenceZero:
+
+    SAP 209,0,0
+    SAP 209,1,0
+    SAP 209,2,0
+
+    GAP 209,0
+    AAP 1,0
+
+    GAP 209,1
+    AAP 1,1
+
+    GAP 209,2
+    AAP 1,2
+
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    WAIT TICKS,0,10
+
+RSUB
+
+// =====================================================
+// RESTORE NORMAL DECELERATION (SAFE)
+// Waits for axes to be clear and then restores SAP 17 to normal.
+// Call this via `CSUB RestoreDecel` before starting a new movement.
+// =====================================================
+RestoreDecel:
+
+    // Ensure motors are stopped before checking
+    MST 0
+    MST 1
+    MST 2
+
+    WAIT TICKS,0,5
+
+WaitAxis0:
+    GAP 3,0
+    COMP 1
+    JC NE, WaitAxis0
+
+WaitAxis1:
+    GAP 3,1
+    COMP 1
+    JC NE, WaitAxis1
+
+WaitAxis2:
+    GAP 3,2
+    COMP 1
+    JC NE, WaitAxis2
+
+    // Restore deceleration to normal for movement
+    SAP 17,0,51200
+    SAP 17,1,51200
+    SAP 17,2,51200
+
+    RSUB

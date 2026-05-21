@@ -14,12 +14,12 @@ STOP
 // START CALIBRATION OR MOVE
 // =====================================================
 StartCalibrationMove:
+    //This causes the hardstop to start	movement going down
+    //SAP 17,0,51200
+    //SAP 17,1,51200
+    //SAP 17,2,51200
 
-    SAP 17,0,51200
-    SAP 17,1,51200
-    SAP 17,2,51200
-
-    WAIT TICKS,0,2
+    //WAIT TICKS,0,2
 
     //Positive to go down
     SCO 0,0,1000000

@@ -1,0 +1,555 @@
+JA Main
+Main:
+
+// =====================================================
+// STEP 1 — POWER ON AND INITIALIZE (run once at startup)
+// =====================================================
+    CSUB PowerOn            // set motion params, sync encoder/actual/target to 0
+    CSUB StartInit          // set closed-loop PID and regulator params
+    CSUB DisableClosedLoop
+    CSUB EnableClosedLoop   // clean CL init — must happen before any move
+    CSUB ReferenceZero      // set current sled position as coordinate origin
+
+
+// =====================================================
+// APPROACH A — WORSE APPROACH
+// =====================================================
+// STEP 2A — calibrate one axis at a time to copper block.
+//           After this, DO NOT call ReferenceZero or
+//           DisableCL/EnableCL — it corrupts CL state
+//           and breaks hard stop detection in StartMove.
+//           After hard-stop in copper block, restart the board
+//           and rerun Step 1 before running StartMove.
+    //CSUB StartCalibration
+// STEP 3A — move upward to hardcoded target (-500,000).
+//           Only valid if ReferenceZero was NOT called
+//           after Step 2A.
+//
+    //CSUB StartMove
+
+// =====================================================
+// APPROACH B — RECOMMENDED (saves encoder positions after copper block hard stop)
+// =====================================================
+// STEP 2B — calibrate one axis at a time to copper block.
+//           Saves encoder position (GAP 209) per axis in
+//           user variables 0/1/2 (bank 2). Safe to run
+//           any axis independently.
+    //CSUB StartCalibration2
+// STEP 3B — move upward 500,000 counts above each saved
+//           copper block position. SAP 17 stays at 51,200
+//           for first hard stop; EmergencyStop2 raises it
+//           to 1,000,000 on trigger. Can be re-run with a
+//           different CALC SUB offset to change target height.
+//
+    //CSUB StartMove2
+
+
+  //This is still work in progress - 4th MOVE IN CLOSED LOOP UNTIL MOVEMENT IS DONE (SAP 17 set to 1,000,000 after move) AND SET 17 back to 51,200 and hard stop after
+    //CSUB RestoreDecel
+
+// =====================================================
+// STEP 4 — POWER OFF
+// =====================================================
+    //CSUB PowerOff
+
+STOP
+
+PowerOn:
+
+    SAP 210,0,2000
+    SAP 210,1,2000
+    SAP 210,2,2000
+
+    SAP 4,0,51200
+    SAP 4,1,51200
+    SAP 4,2,51200
+
+    SAP 5,0,51200
+    SAP 5,1,51200
+    SAP 5,2,51200
+
+    SAP 17,0,51200
+    SAP 17,1,51200
+    SAP 17,2,51200
+
+    SAP 6,0,25
+    SAP 6,1,25
+    SAP 6,2,25
+
+    SAP 7,0,8
+    SAP 7,1,8
+    SAP 7,2,8
+
+    WAIT TICKS,0,10
+
+    SAP 209,0,0
+    SAP 209,1,0
+    SAP 209,2,0
+
+    GAP 209,0
+    AAP 1,0
+
+    GAP 209,1
+    AAP 1,1
+
+    GAP 209,2
+    AAP 1,2
+
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    WAIT TICKS,0,10
+    RSUB
+
+StartInit:
+
+    SAP 108,0,300000
+    SAP 108,1,300000
+    SAP 108,2,300000
+
+    SAP 109,0,600000
+    SAP 109,1,600000
+    SAP 109,2,600000
+
+    SAP 110,0,255
+    SAP 110,1,255
+    SAP 110,2,255
+
+    SAP 111,0,255
+    SAP 111,1,255
+    SAP 111,2,255
+
+    SAP 113,0,50
+    SAP 113,1,50
+    SAP 113,2,50
+
+    SAP 114,0,240
+    SAP 114,1,240
+    SAP 114,2,240
+
+    SAP 126,0,25
+    SAP 126,1,25
+    SAP 126,2,25
+
+    SAP 125,0,100
+    SAP 125,1,100
+    SAP 125,2,100
+
+    SAP 134,0,100
+    SAP 134,1,100
+    SAP 134,2,100
+
+    SAP 120,0,1000
+    SAP 120,1,1000
+    SAP 120,2,1000
+
+    SAP 121,0,10000
+    SAP 121,1,10000
+    SAP 121,2,10000
+
+    // Caused the copper block calibration too agressive and the motor making noise
+    SAP 115,0,3000
+    SAP 115,1,3000
+    SAP 115,2,3000
+    SAP 116,0,20
+    SAP 116,1,20
+    SAP 116,2,20
+    SAP 117,0,10
+    SAP 117,1,10
+    SAP 117,2,10
+
+    // New parameters only for copper block calibration, it doesn't work for hard stop by hand
+    //SAP 115,0,1200
+    //SAP 115,1,1200
+    //SAP 115,2,1200
+    //SAP 116,0,5
+    //SAP 116,1,5
+    //SAP 116,2,5
+    //SAP 117,0,2
+    //SAP 117,1,2
+    //SAP 117,2,2
+
+
+    SAP 118,0,0
+    SAP 118,1,0
+    SAP 118,2,0
+
+    SAP 119,0,100000
+    SAP 119,1,100000
+    SAP 119,2,100000
+
+    SAP 124,0,65536
+    SAP 124,1,65536
+    SAP 124,2,65536
+
+    SAP 212,0,1000
+    SAP 212,1,1000
+    SAP 212,2,1000
+
+    SAP 213,0,30000
+    SAP 213,1,30000
+    SAP 213,2,30000
+
+    RSUB
+
+DisableClosedLoop:
+
+    SAP 129,0,0
+    SAP 129,1,0
+    SAP 129,2,0
+
+WaitDisableClosedLoop:
+
+    WAIT TICKS,0,1
+    GAP 133,0
+    COMP 0
+    JC NE, WaitDisableClosedLoop
+
+    WAIT TICKS,0,1
+    GAP 133,1
+    COMP 0
+    JC NE, WaitDisableClosedLoop
+
+    WAIT TICKS,0,1
+    GAP 133,2
+    COMP 0
+    JC NE, WaitDisableClosedLoop
+
+    // Mechanical settling
+    WAIT TICKS,0,20
+
+RSUB
+
+EnableClosedLoop:
+
+    SAP 129,0,1
+    SAP 129,1,1
+    SAP 129,2,1
+
+    WaitEnableClosedLoop:
+
+    WAIT TICKS,0,1
+    GAP 133,0
+    COMP 1
+    JC NE, WaitEnableClosedLoop
+
+    WAIT TICKS,0,1
+    GAP 133,1
+    COMP 1
+    JC NE, WaitEnableClosedLoop
+
+    WAIT TICKS,0,1
+    GAP 133,2
+    COMP 1
+    JC NE, WaitEnableClosedLoop
+
+    WAIT TICKS,0,20
+RSUB
+
+// =====================================================
+// USER VARIABLE MAP  (bank 2, accessed via AGP/GGP)
+// =====================================================
+// Index 0 : CALIB_POS_AXIS0  encoder position at copper block, axis 0
+// Index 1 : CALIB_POS_AXIS1  encoder position at copper block, axis 1
+// Index 2 : CALIB_POS_AXIS2  encoder position at copper block, axis 2
+
+StartCalibration2:
+//---------- AXIS 0
+//    SCO 0,0,1000000
+//    MVP COORD,0,0
+//    WAIT TICKS,0,100
+//CalibAxis0Stop:
+//    WAIT TICKS,0,1
+//    GAP 3,0
+//    COMP 0
+//    JC NE, CalibAxis0Stop
+//    MST 0
+//    GAP 209,0
+//    AGP 0,2        // CALIB_POS_AXIS0 = encoder pos at copper block
+
+//---------- AXIS 1
+//    SCO 0,1,1000000
+//    MVP COORD,1,0
+//    WAIT TICKS,0,100
+//CalibAxis1Stop:
+//    WAIT TICKS,0,1
+//    GAP 3,1
+//    COMP 0
+//    JC NE, CalibAxis1Stop
+//    MST 1
+//    GAP 209,1
+//    AGP 1,2        // CALIB_POS_AXIS1 = encoder pos at copper block
+
+//---------- AXIS 2
+//   SCO 0,2,1000000
+//    MVP COORD,2,0
+//    WAIT TICKS,0,100
+//CalibAxis2Stop:
+//    WAIT TICKS,0,1
+//    GAP 3,2
+//   COMP 0
+//    JC NE, CalibAxis2Stop
+//    MST 2
+//    GAP 209,2
+//    AGP 2,2        // CALIB_POS_AXIS2 = encoder pos at copper block
+
+RSUB
+
+
+StartMove2:
+
+    GGP 0,2           // load CALIB_POS_AXIS0
+    CALC SUB,500000   // target = copper block - 500000 (upward)
+    ACO 0,0           // set coordinate 0 for axis 0
+
+    GGP 1,2           // load CALIB_POS_AXIS1
+    CALC SUB,500000
+    ACO 0,1           // set coordinate 0 for axis 1
+
+    GGP 2,2           // load CALIB_POS_AXIS2
+    CALC SUB,500000
+    ACO 0,2           // set coordinate 0 for axis 2
+
+    MVP COORD,0,0
+    MVP COORD,1,0
+    MVP COORD,2,0
+
+    JA MonitorLoop2
+
+// =====================================================
+// MONITOR LOOP 2
+// =====================================================
+MonitorLoop2:
+
+//AXIS 0
+GAP 8,0
+COMP 1
+JC EQ,Axis1_
+
+GAP 3,0
+COMP 0
+JC EQ,EmergencyStop2
+//AXIS 1
+Axis1_:
+
+    GAP 8,1
+    COMP 1
+    JC EQ,Axis2_
+
+    GAP 3,1
+    COMP 0
+    JC EQ,EmergencyStop2
+//AXIS 2
+Axis2_:
+
+    GAP 8,2
+    COMP 1
+    JC EQ,ContinueLoop2
+
+    GAP 3,2
+    COMP 0
+    JC EQ,EmergencyStop2
+ContinueLoop2:
+
+    WAIT TICKS,0,1
+    JA MonitorLoop2
+
+// =====================================================
+// STOP EVERYTHING
+// =====================================================
+EmergencyStop2:
+
+    SAP 17,0, 1000000
+    SAP 17,1, 1000000
+    SAP 17,2, 1000000
+
+    MST 0
+    MST 1
+    MST 2
+
+// -----------------------------------------------------
+// WAIT UNTIL ALL AXES ARE REALLY STOPPED
+// -----------------------------------------------------
+//WaitAxis0Stopped2:
+//    GAP 3,0
+//    COMP 0
+//    JC NE,WaitAxis0Stopped2
+
+//WaitAxis1Stopped2:
+//    GAP 3,1
+//    COMP 0
+//    JC NE,WaitAxis1Stopped2
+
+//WaitAxis2Stopped2:
+//    GAP 3,2
+//    COMP 0
+//    JC NE,WaitAxis2Stopped2
+
+//    WAIT TICKS,0,20         // mechanical settling
+
+//    CSUB RecoverDeceleration  // restore SAP 17 = 51,200 after motor is confirmed stopped
+
+RSUB
+
+RecoverDeceleration:
+  // Restore normal deceleration
+  SAP 17,0,51200
+  SAP 17,1,51200
+  SAP 17,2,51200
+
+RSUB
+
+
+StartCalibration:
+
+    // Move down
+    //AXIS 0
+    //SCO 0,0,1000000
+    //MVP COORD,0,0
+    //WAIT TICKS,0,100        // 100ms: long enough for motor to start moving
+    //CalibAxis0Stop: 
+    //WAIT TICKS,0,1
+    //GAP 3,0
+    //COMP 0
+    //JC NE, CalibAxis0Stop   // wait until stopped = hit block
+    //MST 0
+
+    //AXIS 1
+    //SCO 0,1,1000000
+    //MVP COORD,1,0
+    //WAIT TICKS,0,100
+    //CalibAxis1Stop:
+    //WAIT TICKS,0,1
+    //GAP 3,1
+    //COMP 0
+    //JC NE, CalibAxis1Stop
+    //MST 1
+
+    //AXIS 2
+    //SCO 0,2,1000000
+    //MVP COORD,2,0
+    //WAIT TICKS,0,100
+    //CalibAxis2Stop:
+    //WAIT TICKS,0,1
+    //GAP 3,2
+    //COMP 0
+    //JC NE, CalibAxis2Stop
+    //MST 2
+
+RSUB
+
+ReferenceZero:
+
+    SAP 209,0,0
+    SAP 209,1,0
+    SAP 209,2,0
+
+    GAP 209,0
+    AAP 1,0
+
+    GAP 209,1
+    AAP 1,1
+
+    GAP 209,2
+    AAP 1,2
+
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    WAIT TICKS,0,10
+RSUB
+
+
+// =====================================================
+// START MOVE
+// =====================================================
+StartMove:
+
+    SCO 0,0,-500000
+    SCO 0,1,-500000
+    SCO 0,2,-500000
+
+    MVP COORD,0,0
+    MVP COORD,1,0
+    MVP COORD,2,0
+
+    JA MonitorLoop
+// =====================================================
+// MONITOR LOOP
+// =====================================================
+MonitorLoop:
+
+//AXIS 0
+GAP 8,0
+COMP 1
+JC EQ,Axis1
+
+GAP 3,0
+COMP 0
+JC EQ,EmergencyStop
+//AXIS 1
+Axis1:
+
+    GAP 8,1
+    COMP 1
+    JC EQ,Axis2
+
+    GAP 3,1
+    COMP 0
+    JC EQ,EmergencyStop
+//AXIS 2
+Axis2:
+
+    GAP 8,2
+    COMP 1
+    JC EQ,ContinueLoop
+
+    GAP 3,2
+    COMP 0
+    JC EQ,EmergencyStop
+ContinueLoop:
+
+    WAIT TICKS,0,1
+    JA MonitorLoop
+
+// =====================================================
+// STOP EVERYTHING
+// =====================================================
+EmergencyStop:
+
+    SAP 17,0, 1000000
+    SAP 17,1, 1000000
+    SAP 17,2, 1000000
+
+    MST 0
+    MST 1
+    MST 2
+
+RSUB
+
+
+PowerOff:
+    MST 0                   // Motor STop Axis 0
+    MST 1                   // Motor STop Axis 1
+    MST 2                   // Motor STop Axis 2
+    WAIT TICKS,0,10
+    CSUB DisableClosedLoop
+    SAP 6, 0, 0
+    SAP 6, 1, 0
+    SAP 6, 2, 0
+    SAP 7, 0, 0
+    SAP 7, 1, 0
+    SAP 7, 2, 0
+RSUB
