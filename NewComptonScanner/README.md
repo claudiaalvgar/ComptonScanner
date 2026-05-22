@@ -93,6 +93,47 @@ not overwrite the others.
 
 ---
 
+## Hard stop reproducibility measurements
+
+Scale: 1 motor turn = 5 mm = 51,200 microsteps → 1 ustep ≈ 0.0000977 mm
+
+### 1st hard stop — SAP 17 = 51,200 pps² (initial value, not yet changed)
+
+| Sled |Block initialpos (encoder) | Target   |Encoder after 1st hard stop | Steps moved |
+|------|---------------------------|----------|----------------------------|-------------|
+| 0    | 501,017                   | −500,000 | 345,395                    | 155,622     |
+| 1    | 498,790                   | −500,000 | 343,168                    | 155,622     |
+| 2    | 499,020                   | −500,000 | 346,086                    | 152,934     |
+
+sleds deviation after hard stop: 155,622 − 152,934 = **2,688 usteps = 0.26 mm**
+
+`EmergencyStop2` raises SAP 17 to 1,000,000 during hard stop. `RecoverDeceleration` then restores it to 51,200.
+
+---
+
+### 2nd hard stop — comparing two SAP 17 strategies
+
+
+| Sled | Target   | Encoder after 2nd hard stop | Steps moved from copper block |
+|------|----------|-----------------------------|-------------------------------|
+| 0    | −500,000 | 241,971                     | 259,046                       |
+| 1    | −500,000 | 239,795                     | 258,995                       |
+| 2    | −500,000 | 245,376                     | 253,644                       |
+
+sleds deviation after hard stop: 259,046 − 253,644 = **5,402 usteps = 0.52 mm**
+
+**Finish the move (the 500,000 steps) after the 2 hard stops**
+
+| Sled | Final encoder pos | Steps moved from copper block |
+|------|-------------------|-------------------------------|
+| 0    | 1,075             | 499,942                       |
+| 1    | −1,127            | 499,917                       |
+| 2    | −666              | 499,686                       |
+
+sleds deviation after the 2 hard stops and finishing the move: 499,942 − 499,686 = **256 usteps = 0.025 mm**
+
+---
+
 ## Approach A (deprecated): StartCalibration + StartMove
 
 `StartCalibration` moves each axis to the copper block and stops. After this, the

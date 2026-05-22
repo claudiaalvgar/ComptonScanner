@@ -4,28 +4,28 @@ Main:
 // =====================================================
 // STEP 1 — POWER ON AND INITIALIZE (run once at startup)
 // =====================================================
-    CSUB PowerOn            // set motion params, sync encoder/actual/target to 0
-    CSUB StartInit          // set closed-loop PID and regulator params
-    CSUB DisableClosedLoop
-    CSUB EnableClosedLoop   // clean CL init — must happen before any move
-    CSUB ReferenceZero      // set current sled position as coordinate origin
+    //CSUB PowerOn            // set motion params, sync encoder/actual/target to 0
+    //CSUB StartInit          // set closed-loop PID and regulator params
+    //CSUB DisableClosedLoop
+    //CSUB EnableClosedLoop   // clean CL init — must happen before any move
+    //CSUB ReferenceZero      // set current sled position as coordinate origin
 
+//Copper block routine has to be performed straight after these routines, otherwise, if we perform a 
+//movemend and then set the encoder,target and actual position to 0 (this causes some internal mismatch) 
+//and then perform the copper block calibration the hard stop in the copper block makes a weird noise
 
 // =====================================================
-// APPROACH A — WORSE APPROACH
+// SKIP - APPROACH A — WORSE APPROACH
 // =====================================================
 // STEP 2A — calibrate one axis at a time to copper block.
 //           After this, DO NOT call ReferenceZero or
 //           DisableCL/EnableCL — it corrupts CL state
 //           and breaks hard stop detection in StartMove.
 //           After hard-stop in copper block, restart the board
-//           and rerun Step 1 before running StartMove.
-    //CSUB StartCalibration
+//           and rerun Step 1 before running StartMove: CSUB StartCalibration
 // STEP 3A — move upward to hardcoded target (-500,000).
 //           Only valid if ReferenceZero was NOT called
-//           after Step 2A.
-//
-    //CSUB StartMove
+//           after Step 2A: CSUB StartMove
 
 // =====================================================
 // APPROACH B — RECOMMENDED (saves encoder positions after copper block hard stop)
@@ -43,9 +43,13 @@ Main:
 //
     //CSUB StartMove2
 
-
-  //This is still work in progress - 4th MOVE IN CLOSED LOOP UNTIL MOVEMENT IS DONE (SAP 17 set to 1,000,000 after move) AND SET 17 back to 51,200 and hard stop after
-    //CSUB RestoreDecel
+// =====================================================
+// MEASUREMENT CONDITIONS
+// =====================================================
+     
+     //CSUB EnterMeasurementMode
+//PERFORM HPGe measurement
+     //CSUB ExitMeasurementMode
 
 // =====================================================
 // STEP 4 — POWER OFF
@@ -376,24 +380,24 @@ EmergencyStop2:
 // -----------------------------------------------------
 // WAIT UNTIL ALL AXES ARE REALLY STOPPED
 // -----------------------------------------------------
-//WaitAxis0Stopped2:
-//    GAP 3,0
-//    COMP 0
-//    JC NE,WaitAxis0Stopped2
+WaitAxis0Stopped2:
+    GAP 3,0
+    COMP 0
+    JC NE,WaitAxis0Stopped2
 
-//WaitAxis1Stopped2:
-//    GAP 3,1
-//    COMP 0
-//    JC NE,WaitAxis1Stopped2
+WaitAxis1Stopped2:
+    GAP 3,1
+    COMP 0
+    JC NE,WaitAxis1Stopped2
 
-//WaitAxis2Stopped2:
-//    GAP 3,2
-//    COMP 0
-//    JC NE,WaitAxis2Stopped2
+WaitAxis2Stopped2:
+    GAP 3,2
+    COMP 0
+    JC NE,WaitAxis2Stopped2
 
-//    WAIT TICKS,0,20         // mechanical settling
+    WAIT TICKS,0,20         // mechanical settling
 
-//    CSUB RecoverDeceleration  // restore SAP 17 = 51,200 after motor is confirmed stopped
+    CSUB RecoverDeceleration  // restore SAP 17 = 51,200 after motor is confirmed stopped
 
 RSUB
 
@@ -477,65 +481,65 @@ RSUB
 // =====================================================
 StartMove:
 
-    SCO 0,0,-500000
-    SCO 0,1,-500000
-    SCO 0,2,-500000
+//    SCO 0,0,-500000
+//    SCO 0,1,-500000
+//    SCO 0,2,-500000
 
-    MVP COORD,0,0
-    MVP COORD,1,0
-    MVP COORD,2,0
+//    MVP COORD,0,0
+//    MVP COORD,1,0
+//    MVP COORD,2,0
 
-    JA MonitorLoop
+//    JA MonitorLoop
 // =====================================================
 // MONITOR LOOP
 // =====================================================
-MonitorLoop:
+//MonitorLoop:
 
 //AXIS 0
-GAP 8,0
-COMP 1
-JC EQ,Axis1
+//GAP 8,0
+//COMP 1
+//JC EQ,Axis1
 
-GAP 3,0
-COMP 0
-JC EQ,EmergencyStop
+//GAP 3,0
+//COMP 0
+//JC EQ,EmergencyStop
 //AXIS 1
-Axis1:
+//Axis1:
 
-    GAP 8,1
-    COMP 1
-    JC EQ,Axis2
+//    GAP 8,1
+//    COMP 1
+//    JC EQ,Axis2
 
-    GAP 3,1
-    COMP 0
-    JC EQ,EmergencyStop
+//    GAP 3,1
+//    COMP 0
+//    JC EQ,EmergencyStop
 //AXIS 2
-Axis2:
+//Axis2:
 
-    GAP 8,2
-    COMP 1
-    JC EQ,ContinueLoop
+//    GAP 8,2
+//    COMP 1
+//    JC EQ,ContinueLoop
 
-    GAP 3,2
-    COMP 0
-    JC EQ,EmergencyStop
-ContinueLoop:
+//    GAP 3,2
+//    COMP 0
+//    JC EQ,EmergencyStop
+//ContinueLoop:
 
-    WAIT TICKS,0,1
-    JA MonitorLoop
+//    WAIT TICKS,0,1
+//    JA MonitorLoop
 
 // =====================================================
 // STOP EVERYTHING
 // =====================================================
-EmergencyStop:
+//EmergencyStop:
 
-    SAP 17,0, 1000000
-    SAP 17,1, 1000000
-    SAP 17,2, 1000000
+//    SAP 17,0, 1000000
+//    SAP 17,1, 1000000
+//    SAP 17,2, 1000000
 
-    MST 0
-    MST 1
-    MST 2
+//    MST 0
+//    MST 1
+//    MST 2
 
 RSUB
 
@@ -552,4 +556,86 @@ PowerOff:
     SAP 7, 0, 0
     SAP 7, 1, 0
     SAP 7, 2, 0
+RSUB
+
+
+// =====================================================
+// De-energize motors for detector data acquisition.
+// SAP 6=0 (run current) and SAP 7=0 (hold current)
+// stop all PWM switching and EMI without touching CL
+// state or calibration. SAP 204 freewheeling modes
+// require StealthChop + SAP 7=0 as prerequisites and
+// have no effect in the current configuration.
+// =====================================================
+EnterMeasurementMode:
+
+    MST 0
+    MST 1
+    MST 2
+
+WaitAxis0Stopped_M:
+    GAP 3,0
+    COMP 0
+    JC NE,WaitAxis0Stopped_M
+
+WaitAxis1Stopped_M:
+    GAP 3,1
+    COMP 0
+    JC NE,WaitAxis1Stopped_M
+
+WaitAxis2Stopped_M:
+    GAP 3,2
+    COMP 0
+    JC NE,WaitAxis2Stopped_M
+
+    WAIT TICKS,0,50         // mechanical settling
+
+    // Sync target to current position before de-energizing
+    // so CL does not fight to return to old move target on restore
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    SAP 6,0,0               // zero run current — stops all PWM switching
+    SAP 6,1,0
+    SAP 6,2,0
+    SAP 7,0,0               // zero hold current
+    SAP 7,1,0
+    SAP 7,2,0
+
+    WAIT TICKS,0,100        // electrical settling before measurement
+
+RSUB
+
+// =====================================================
+// Restore motion system after measurement.
+// Re-syncs target in case sleds drifted during
+// measurement before re-energizing — no jerk.
+// =====================================================
+ExitMeasurementMode:
+
+    // Re-sync target in case of drift during measurement
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    SAP 6,0,25              // restore run current
+    SAP 6,1,25
+    SAP 6,2,25
+    SAP 7,0,8               // restore hold current
+    SAP 7,1,8
+    SAP 7,2,8
+
+    WAIT TICKS,0,50         // wait for CL to stabilise at current position
+
 RSUB
