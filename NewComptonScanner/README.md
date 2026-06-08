@@ -38,7 +38,29 @@ To change the target height, modify the `CALC SUB,500000` value in `StartMove2`.
 The same routine can be re-run with a different offset to move up or down from
 the current position.
 
-**Step 4 — power off**
+**Step 4 — measurement mode (optional)**
+```
+CSUB EnterMeasurementMode
+// perform HPGe measurement
+CSUB ExitMeasurementMode
+```
+`EnterMeasurementMode` de-energizes motors for low-noise HPGe detector data acquisition:
+1. Stops all axes (`MST 0/1/2`) and polls `GAP 3` until each axis confirms stopped.
+2. Waits 50 ticks for mechanical settling.
+3. Syncs target position (`AAP 0`) to current encoder (`GAP 209`) — prevents the CL
+   controller from fighting to return to an old move target when current is restored.
+4. Sets `SAP 6` (run current) and `SAP 7` (hold current) to 0, stopping all PWM
+   switching and eliminating motor EMI during measurement.
+5. Waits 100 ticks for electrical settling before measurement begins.
+
+`ExitMeasurementMode` restores the motion system after measurement:
+1. Re-syncs target to current encoder position (in case sleds drifted during measurement)
+   to prevent jerk on restore.
+2. Restores `SAP 6` to 25 (run current) and `SAP 7` to 8 (hold current).
+3. Waits 50 ticks for the CL controller to stabilize at the current position.
+
+
+**Step 5 — power off**
 ```
 CSUB PowerOff
 ```
@@ -134,7 +156,7 @@ sleds deviation after the 2 hard stops and finishing the move: 499,942 − 499,6
 
 ---
 
-## Approach A (deprecated): StartCalibration + StartMove
+## Deprecated: StartCalibration + StartMove instead use StartCalibration2 + StartMove2
 
 `StartCalibration` moves each axis to the copper block and stops. After this, the
 only valid next step is `StartMove` immediately — no `ReferenceZero`, no

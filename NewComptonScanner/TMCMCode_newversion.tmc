@@ -2,16 +2,28 @@
 // TMCM-3351 SYNCHRONOUS 3-AXIS VERTICAL LIFT SCRIPT
 // ========================================================================
 // GLOBAL PARAMETERS (Bank 2) INTERFACE:
-// GP 0:  Target Position (Microsteps)
-// GP 1:  Target Speed (Velocity units)
+// GP 0:  Target Position offset above copper block (Microsteps) — write before GP10=9
+// GP 4:  Max Speed (Velocity units) — write before GP10=1 or GP10=9
 // GP 10: State Machine Command Register
 //         0 = Idle / Task Complete
-//         1 = Execute Synchronous Move
-//         2 = Execute Synchronous Homing
-//         3 = Init
-//         4 = Power ON
-//         5 = Power OFF
-//        99 = Error / Jam Detected (System Halted)
+//         1 = Power ON
+//         2 = Start Init (load closed-loop parameters)
+//         3 = Disable Closed Loop
+//         4 = Enable Closed Loop
+//         5 = Reference Zero
+//         6 = Start Calibration Axis 0
+//         7 = Start Calibration Axis 1
+//         8 = Start Calibration Axis 2
+//         9 = Start Move (calibration-relative, offset from copper block)
+//        10 = Power OFF
+//        11 = Enter Measurement Mode (zero currents, sync target)
+//        12 = Exit  Measurement Mode (restore currents from GP bank 2)
+//        13 = Move Axis 0 to absolute encoder position (GP 0 = target)
+//        14 = Move Axis 1 to absolute encoder position (GP 0 = target)
+//        15 = Move Axis 2 to absolute encoder position (GP 0 = target)
+//        16 = Simultaneous Calibration (all 3 axes descend together; first block contact → GP10=99; then call 6,7,8)
+//        99 = Error / Jam Detected (set by EmergencyStop; persists until Julia sends recovery command)
+//       999 = End TMCL program
 
 
 //Element	Role
@@ -27,8 +39,10 @@
 
 
 // ========================================================================
-// --- VARIABLES ---
+// --- VARIABLES IN BANK 2---
 // ========================================================================
+// The first 56 variables can also be stored permanently in the EEPROM. After booting, their values are
+//automatically restored to the RAM.
 Target_Pos = 0
 Actual_Pos = 1
 Target_Speed = 2
@@ -39,6 +53,12 @@ Max_Current = 6
 Standby_Current = 7
 TMCM_Command = 10
 Max_Deceleration = 17
+
+CALIB_POS_AXIS0 = 53
+CALIB_POS_AXIS1 = 54
+CALIB_POS_AXIS2 = 55
+
+
 CLgamma_Vmin = 108
 CLgamma_Vmax = 109
 CL_Maxgamma = 110
@@ -59,7 +79,8 @@ Pos_Window = 134
 Encoder_Pos = 209
 Encoder_Resolution = 210
 Max_Encoder_Deviation = 212
-Max_velocity_Deviation = 213
+Max_Velocity_Deviation = 213
+
 
 // ========================================================================
 // --- INITIALIZATION --- SOME OF THEM INITIALISED IN JULIA
@@ -82,7 +103,7 @@ SGP CL_Correction_VelocityDV_Clock, 2, 0
 SGP CL_Correction_VelocityDV_Clipping, 2, 100000
 SGP CL_Upscale_Delay, 2, 1000
 SGP CL_Downscale_Delay, 2, 10000
-SGP CL_Correction_Pos, 65536
+SGP CL_Correction_Pos, 2, 65536
 SGP CLmax_Correction_Tolerance, 2, 100
 SGP CL_Startup, 2, 25
 SGP Pos_Window, 2, 100
@@ -113,17 +134,44 @@ MainLoop:
     JC EQ, EnableClosedLoop
 
     COMP 5
-    JC EQ, StartHome
+    JC EQ, ReferenceZero
 
     COMP 6
-    JC EQ, StartMove
+    JC EQ, StartCalibrationAxis0
 
     COMP 7
+    JC EQ, StartCalibrationAxis1
+
+    COMP 8
+    JC EQ, StartCalibrationAxis2
+
+    COMP 9
+    JC EQ, StartMove
+
+    COMP 10
     JC EQ, PowerOff
 
-    COMP 99
-    JC EQ, ErrorState
-        
+    COMP 11
+    JC EQ, EnterMeasurementMode
+
+    COMP 12
+    JC EQ, ExitMeasurementMode
+
+    COMP 13
+    JC EQ, MoveAxis0
+
+    COMP 14
+    JC EQ, MoveAxis1
+
+    COMP 15
+    JC EQ, MoveAxis2
+
+    COMP 16
+    JC EQ, SimultaneousCalibration
+
+    //COMP 99
+    //JC EQ, ErrorState
+
     COMP 999
     JC EQ, EndLoop
 
@@ -168,31 +216,24 @@ PowerOn:
 
     WAIT TICKS,0,10
 
-    SAP 209,0,0
-    SAP 209,1,0
-    SAP 209,2,0
-
+    // Read resting encoder positions WITHOUT zeroing first.
+    // Syncs actual (AP1) and target (AP0) to the same physical position
+    // so the closed-loop PID sees zero error on activation — no snap.
     GAP 209,0
     AAP 1,0
-
-    GAP 209,1
-    AAP 1,1
-
-    GAP 209,2
-    AAP 1,2
-
-    GAP 209,0
     AAP 0,0
 
     GAP 209,1
+    AAP 1,1
     AAP 0,1
 
     GAP 209,2
+    AAP 1,2
     AAP 0,2
 
     WAIT TICKS,0,10
 
-    SGP 10, 2, 0   
+    SGP 10, 2, 0
     JA MainLoop
 
 
@@ -203,99 +244,99 @@ PowerOn:
 StartInit:
 
     GGP CLgamma_Vmin, 2
-    AAP 108,0,300000
-    AAP 108,1,300000
-    AAP 108,2,300000
+    AAP 108,0
+    AAP 108,1
+    AAP 108,2
 
     GGP CLgamma_Vmax, 2
-    AAP 109,0,600000
-    AAP 109,1,600000
-    AAP 109,2,600000
+    AAP 109,0
+    AAP 109,1
+    AAP 109,2
 
     GGP CL_Maxgamma, 2
-    AAP 110,0,255
-    AAP 110,1,255
-    AAP 110,2,255
+    AAP 110,0
+    AAP 110,1
+    AAP 110,2
 
     GGP CL_Beta, 2
-    AAP 111,0,255
-    AAP 111,1,255
-    AAP 111,2,255
+    AAP 111,0
+    AAP 111,1
+    AAP 111,2
 
     GGP CL_Currentmin, 2
-    AAP 113,0,50
-    AAP 113,1,50
-    AAP 113,2,50
+    AAP 113,0
+    AAP 113,1
+    AAP 113,2
 
     GGP CL_Currentmax, 2
-    AAP 114,0,240
-    AAP 114,1,240
-    AAP 114,2,240
+    AAP 114,0
+    AAP 114,1
+    AAP 114,2
 
     GGP CL_Startup, 2
-    AAP 126,0,25
-    AAP 126,1,25
-    AAP 126,2,25
+    AAP 126,0
+    AAP 126,1
+    AAP 126,2
 
     GGP CLmax_Correction_Tolerance, 2
-    AAP 125,0,100
-    AAP 125,1,100
-    AAP 125,2,100
+    AAP 125,0
+    AAP 125,1
+    AAP 125,2
 
     GGP Pos_Window, 2
-    AAP 134,0,100
-    AAP 134,1,100
-    AAP 134,2,100
+    AAP 134,0
+    AAP 134,1
+    AAP 134,2
 
     GGP CL_Upscale_Delay, 2
-    AAP 120,0,1000
-    AAP 120,1,1000
-    AAP 120,2,1000
+    AAP 120,0
+    AAP 120,1
+    AAP 120,2
 
     GGP CL_Downscale_Delay, 2
-    AAP 121,0,10000
-    AAP 121,1,10000
-    AAP 121,2,10000
+    AAP 121,0
+    AAP 121,1
+    AAP 121,2
 
     GGP CL_Correction_VelocityP, 2
-    AAP 115,0,3000
-    AAP 115,1,3000
-    AAP 115,2,3000
+    AAP 115,0
+    AAP 115,1
+    AAP 115,2
 
     GGP CL_Correction_VelocityI, 2
-    AAP 116,0,20
-    AAP 116,1,20
-    AAP 116,2,20
+    AAP 116,0
+    AAP 116,1
+    AAP 116,2
 
     GGP CL_Correction_VelocityI_Clipping, 2
-    AAP 117,0,10
-    AAP 117,1,10
-    AAP 117,2,10
+    AAP 117,0
+    AAP 117,1
+    AAP 117,2
 
     GGP CL_Correction_VelocityDV_Clock, 2
-    AAP 118,0,0
-    AAP 118,1,0
-    AAP 118,2,0
+    AAP 118,0
+    AAP 118,1
+    AAP 118,2
 
     GGP CL_Correction_VelocityDV_Clipping, 2
-    AAP 119,0,100000
-    AAP 119,1,100000
-    AAP 119,2,100000
+    AAP 119,0
+    AAP 119,1
+    AAP 119,2
 
     GGP CL_Correction_Pos, 2
-    AAP 124,0,65536
-    AAP 124,1,65536
-    AAP 124,2,65536
+    AAP 124,0
+    AAP 124,1
+    AAP 124,2
 
-    GGP Max_Encoder_Deviation, 2     //Needed for Homing and for movement: When the actual position (parameter 1) and the encoder position (parameter 209) differ more than set here the motor will be stopped. This function is switched off when the maximum deviation is set to zero.
-    AAP 212,0,1000
-    AAP 212,1,1000
-    AAP 212,2,1000
+    GGP Max_Encoder_Deviation, 2
+    AAP 212,0
+    AAP 212,1
+    AAP 212,2
 
-    GPP Max_velocity_Deviation, 2
-    AAP 213,0,30000
-    AAP 213,1,30000
-    AAP 213,2,30000
+    GGP Max_Velocity_Deviation, 2
+    AAP 213,0
+    AAP 213,1
+    AAP 213,2
 
     WAIT TICKS,0,10
 
@@ -329,7 +370,7 @@ DisableClosedLoop:
         COMP 0
         JC NE, WaitDisableClosedLoop
 
-    WAIT TICKS,0,10
+    WAIT TICKS,0,20
         
     SGP 10, 2, 0
     JA MainLoop
@@ -356,6 +397,8 @@ DisableClosedLoop_Routine:
     GAP 133,2
     COMP 0
     JC NE, WaitDisableClosedLoop_Routine
+
+    WAIT TICKS,0,20
 
     RSUB
 
@@ -386,122 +429,231 @@ EnableClosedLoop:
         COMP 1
         JC NE, WaitEnableClosedLoop
 
-        WAIT TICKS,0,10
-
-        SAP 209,0,0
-        GAP 209,0
-        AAP 1,0
-        GAP 209,0
-        AAP 0,0
-
-        SAP 209,1,0
-        GAP 209,1
-        AAP 1,1
-        GAP 209,1
-        AAP 0,1
-
-        SAP 209,2,0
-        GAP 209,2
-        AAP 1,2
-        GAP 209,2
-        AAP 0,2
-
-    WAIT TICKS,0,10
+    WAIT TICKS,0,20
 
     SGP 10, 2, 0
     JA MainLoop
 
 // ========================================================================
-// 5. START HOME
+// 5. REFERENCE ZERO
 // ========================================================================
 
-// 2 options below
+ReferenceZero:
+
+    SAP 209,0,0
+    SAP 209,1,0
+    SAP 209,2,0
+
+    GAP 209,0
+    AAP 1,0
+
+    GAP 209,1
+    AAP 1,1
+
+    GAP 209,2
+    AAP 1,2
+
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+WAIT TICKS,0,10
+SGP 10, 2, 0   
+JA MainLoop
 
 // ========================================================================
-// 6. START MOVE
+// 6. START CALIBRATION AXIS 0
+// ========================================================================
+StartCalibrationAxis0:
+    SCO 0,0,1000000
+    MVP COORD,0,0
+    WAIT TICKS,0,100
+CalibAxis0Stop:
+    WAIT TICKS,0,1
+    GAP 3,0
+    COMP 0
+    JC NE, CalibAxis0Stop
+    MST 0
+    GAP 209,0
+    AGP CALIB_POS_AXIS0,2        // CALIB_POS_AXIS0 = encoder pos at block
+
+SGP 10, 2, 0
+JA MainLoop
+
+// ========================================================================
+// 7. START CALIBRATION AXIS 1
+// ========================================================================
+StartCalibrationAxis1:
+    SCO 0,1,1000000
+    MVP COORD,1,0
+    WAIT TICKS,0,100
+CalibAxis1Stop:
+    WAIT TICKS,0,1
+    GAP 3,1
+    COMP 0
+    JC NE, CalibAxis1Stop
+    MST 1
+    GAP 209,1
+    AGP CALIB_POS_AXIS1,2        // CALIB_POS_AXIS1 = encoder pos at block
+
+SGP 10, 2, 0
+JA MainLoop
+
+// ========================================================================
+// 8. START CALIBRATION AXIS 2
+// ========================================================================
+StartCalibrationAxis2:
+   SCO 0,2,1000000
+    MVP COORD,2,0
+    WAIT TICKS,0,100
+CalibAxis2Stop:
+    WAIT TICKS,0,1
+    GAP 3,2
+   COMP 0
+    JC NE, CalibAxis2Stop
+    MST 2
+    GAP 209,2
+    AGP CALIB_POS_AXIS2,2        // CALIB_POS_AXIS2 = encoder pos at copper block
+
+SGP 10, 2, 0
+JA MainLoop
+
+// ========================================================================
+// 9. START MOVE
 // ========================================================================
 
 StartMove:
-
-    SGP 10, 2, 0            // Reset State to 0 (Idle/Done) clear command immediately
 
     GGP Max_Speed, 2
     AAP 4,0
     AAP 4,1
     AAP 4,2
 
-    GGP Target_Pos, 2
-    AAP 0,0
-    AAP 0,1
-    AAP 0,2
-    
-    MVP ABS,0,0
-    MVP ABS,1,0
-    MVP ABS,2,0
+    // Load offset into X register so CALCX SUB can reuse it for all 3 axes
+    GGP Target_Pos, 2        // acc = common offset (positive = going upwards)
+    CALC SWAP, 0             // X  = offset   (save it so CALCX SUB can reuse for all 3 axes)
+
+    GGP CALIB_POS_AXIS0, 2  // acc = calib pos axis 0  (GP 53, bank 2)
+    CALCX SUB                // acc = calib0 - offset
+    ACO 0,0                  // coordinate 0 of axis 0 = acc
+
+    GGP CALIB_POS_AXIS1, 2  // acc = calib pos axis 1  (GP 54, bank 2)
+    CALCX SUB                // acc = calib1 - offset
+    ACO 0,1
+
+    GGP CALIB_POS_AXIS2, 2  // acc = calib pos axis 2  (GP 55, bank 2)
+    CALCX SUB                // acc = calib2 - offset
+    ACO 0,2
+
+    MVP COORD,0,0
+    MVP COORD,1,0
+    MVP COORD,2,0
+
 
     JA MonitorLoop
 
-    // =====================================================
-    // MONITOR LOOP
-    // =====================================================
-    MonitorLoop:
+MonitorLoop:
 
-    //AXIS 0
-    GAP 8,0
-    COMP 1
-    JC EQ,Axis1
+//AXIS 0
+GAP 8,0
+COMP 1
+JC EQ,Axis1_
 
-    GAP 3,0
-    COMP 0
-    JC EQ,EmergencyStop
-
-    //AXIS 1
-    Axis1:
+GAP 3,0
+COMP 0
+JC EQ,EmergencyStop
+//AXIS 1
+Axis1_:
 
     GAP 8,1
     COMP 1
-    JC EQ,Axis2
+    JC EQ,Axis2_
 
     GAP 3,1
     COMP 0
     JC EQ,EmergencyStop
-
-    //AXIS 2
-    Axis2:
+//AXIS 2
+Axis2_:
 
     GAP 8,2
     COMP 1
-    JC EQ,ContinueLoop
+    JC EQ,CheckAllDone
 
     GAP 3,2
     COMP 0
     JC EQ,EmergencyStop
+ContinueLoop:
 
-    ContinueLoop:
+    WAIT TICKS,0,1
+    JA MonitorLoop
 
-      WAIT TICKS,0,1
-      JA MonitorLoop
+CheckAllDone:
+    GAP 8,0
+    COMP 1
+    JC NE, ContinueLoop
 
+    GAP 8,1
+    COMP 1
+    JC NE, ContinueLoop
 
-   // =====================================================
-   // STOP EVERYTHING
-   // =====================================================
-   EmergencyStop:
+    GAP 8,2
+    COMP 1
+    JC NE, ContinueLoop
 
-      SAP 17,0, 100000
-      SAP 17,1, 100000
-      SAP 17,2, 100000
+    SGP 10, 2, 0
+    JA MainLoop
 
-      MST 0
-      MST 1
-      MST 2
+// =====================================================
+// STOP EVERYTHING
+// =====================================================
+EmergencyStop:
 
-   WAIT TICKS,0,10
-   SGP 10, 2, 0
-   JA MainLoop
+    SAP 17,0, 1000000
+    SAP 17,1, 1000000
+    SAP 17,2, 1000000
+
+    MST 0
+    MST 1
+    MST 2
+
+// -----------------------------------------------------
+// WAIT UNTIL ALL AXES ARE REALLY STOPPED
+// -----------------------------------------------------
+WaitAxis0Stopped:
+    GAP 3,0
+    COMP 0
+    JC NE,WaitAxis0Stopped
+
+WaitAxis1Stopped:
+    GAP 3,1
+    COMP 0
+    JC NE,WaitAxis1Stopped
+
+WaitAxis2Stopped:
+    GAP 3,2
+    COMP 0
+    JC NE,WaitAxis2Stopped
+
+    WAIT TICKS,0,20         // mechanical settling
+
+    CSUB RecoverDeceleration
+    SGP 10, 2, 99
+    JA MainLoop
+
+RecoverDeceleration:
+    GGP Max_Deceleration, 2
+    AAP 17,0
+    AAP 17,1
+    AAP 17,2
+    RSUB
 
 // ========================================================================
-// 7. POWER OFF
+// 10. POWER OFF
 // ========================================================================
 
 PowerOff:
@@ -521,7 +673,180 @@ PowerOff:
    WAIT TICKS,0,10
    SGP 10, 2, 0
    JA MainLoop
-        
+
+ // ========================================================================
+// 11. ENTER MEASUREMENT MODE
+// ========================================================================
+
+EnterMeasurementMode:
+
+    MST 0
+    MST 1
+    MST 2
+
+WaitAxis0Stopped_M:
+    GAP 3,0
+    COMP 0
+    JC NE,WaitAxis0Stopped_M
+
+WaitAxis1Stopped_M:
+    GAP 3,1
+    COMP 0
+    JC NE,WaitAxis1Stopped_M
+
+WaitAxis2Stopped_M:
+    GAP 3,2
+    COMP 0
+    JC NE,WaitAxis2Stopped_M
+
+    WAIT TICKS,0,50         // mechanical settling
+
+    // Sync target to current position before de-energizing
+    // so CL does not fight to return to old move target on restore
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    SAP 6,0,0               // zero run current — stops all PWM switching
+    SAP 6,1,0
+    SAP 6,2,0
+    SAP 7,0,0               // zero hold current
+    SAP 7,1,0
+    SAP 7,2,0
+
+    WAIT TICKS,0,100        // electrical settling before measurement
+
+    SGP 10, 2, 0
+    JA MainLoop
+
+// =====================================================
+// 12. Restore motion system after measurement.
+// Re-syncs target in case sleds drifted during
+// measurement before re-energizing — no jerk.
+// =====================================================
+ExitMeasurementMode:
+
+    // Re-sync target in case of drift during measurement
+    GAP 209,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 0,2
+
+    GGP Max_Current, 2
+    AAP 6,0
+    AAP 6,1
+    AAP 6,2
+
+    GGP Standby_Current, 2
+    AAP 7,0
+    AAP 7,1
+    AAP 7,2
+
+    WAIT TICKS,0,50         // wait for CL to stabilise at current position
+
+    SGP 10, 2, 0
+    JA MainLoop
+
+       
+// ========================================================================
+// 13. MOVE AXIS 0 TO ABSOLUTE POSITION
+// Julia writes absolute encoder target to GP 0 before sending state 13.
+// Other axes are held by their self-locking spindles. Use for re-leveling.
+// ========================================================================
+MoveAxis0:
+    GGP Max_Speed, 2
+    AAP 4,0
+    GGP Target_Pos, 2
+    ACO 0,0
+    MVP COORD,0,0
+MonitorAxis0Loop:
+    GAP 8,0
+    COMP 1
+    JC EQ, DoneAxis0
+    GAP 3,0
+    COMP 0
+    JC EQ, EmergencyStop
+    WAIT TICKS,0,1
+    JA MonitorAxis0Loop
+DoneAxis0:
+    SGP 10, 2, 0
+    JA MainLoop
+
+// ========================================================================
+// 14. MOVE AXIS 1 TO ABSOLUTE POSITION
+// ========================================================================
+MoveAxis1:
+    GGP Max_Speed, 2
+    AAP 4,1
+    GGP Target_Pos, 2
+    ACO 0,1
+    MVP COORD,1,0
+MonitorAxis1Loop:
+    GAP 8,1
+    COMP 1
+    JC EQ, DoneAxis1
+    GAP 3,1
+    COMP 0
+    JC EQ, EmergencyStop
+    WAIT TICKS,0,1
+    JA MonitorAxis1Loop
+DoneAxis1:
+    SGP 10, 2, 0
+    JA MainLoop
+
+// ========================================================================
+// 15. MOVE AXIS 2 TO ABSOLUTE POSITION
+// ========================================================================
+MoveAxis2:
+    GGP Max_Speed, 2
+    AAP 4,2
+    GGP Target_Pos, 2
+    ACO 0,2
+    MVP COORD,2,0
+MonitorAxis2Loop:
+    GAP 8,2
+    COMP 1
+    JC EQ, DoneAxis2
+    GAP 3,2
+    COMP 0
+    JC EQ, EmergencyStop
+    WAIT TICKS,0,1
+    JA MonitorAxis2Loop
+DoneAxis2:
+    SGP 10, 2, 0
+    JA MainLoop
+
+// ========================================================================
+// 16. SIMULTANEOUS CALIBRATION
+// All 3 axes descend toward the copper blocks together.
+// The first axis to contact its block triggers EmergencyStop (GP10=99).
+// Julia detects GP10=99 then calls states 6, 7, 8 in sequence:
+//   - The axis already at its block records instantly (velocity already 0).
+//   - The other two move freely to their blocks (self-locking spindles hold
+//     the contacted axis in place, so the platform does not drag it).
+// ========================================================================
+SimultaneousCalibration:
+    GGP Max_Speed, 2
+    AAP 4,0
+    AAP 4,1
+    AAP 4,2
+    SCO 0,0,1000000
+    SCO 0,1,1000000
+    SCO 0,2,1000000
+    MVP COORD,0,0
+    MVP COORD,1,0
+    MVP COORD,2,0
+    JA MonitorLoop
+
 // ========================================================================
 // 999. END LOOP OF TMCM PROGRAM - SOP FIRMWARE
 // ========================================================================
@@ -547,195 +872,14 @@ EndLoop:
 
 
 
-// ========================================================================
-// SYNCHRONOUS HOMING (Master Axis 0 Strategy) a “reference search” (homing)
-// ========================================================================
-StartHome:
-    // Apply Homing Search Speed (GP 1) to all axes
-    GGP 4, 2
-    AAP 4, 0
-    AAP 4, 1
-    AAP 4, 2
 
-    // --- Move DOWN toward home ---
-    ROR 0
-    ROR 1
-    ROR 2
 
-    JA WaitHome
 
-WaitHome:
-    // --- Monitor Left Limit Switch of Axis 0 ---
-    GAP 9, 0                // Move until dedicated reference sensor is hit
-    COMP 1                  // 1 = Switch is pressed/active
-    JC NE, WaitHome         // If not pressed, keep moving and checking
 
-    // --- Switch Hit! ---
-    // Instantly halt all axes to maintain synchronization
-    MST 0
-    MST 1
-    MST 2
 
-    // Set the internal step counters to 0
 
-    SAP 209,0,0
-    SAP 209,1,0
-    SAP 209,2,0
 
-    GAP 209,0
-    AAP 1,0
 
-    GAP 209,1
-    AAP 1,1
 
-    GAP 209,2
-    AAP 1,2
 
-    GAP 209,0
-    AAP 0,0
 
-    GAP 209,1
-    AAP 0,1
-
-    GAP 209,2
-    AAP 0,2
-
-
-    SGP 10, 2, 0            // Reset State to 0 (Idle/Done)
-    JA MainLoop
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ========================================================================
-// SYNCHRONIZED HOMING ROUTINE
-// Axis 0 = Master Homing Axis
-// One home switch at bottom
-// All axes move together vertically
-// ========================================================================
-
-StartHome:
-
-    // ------------------------------------------------------------
-    // Temporarily relax encoder deviation during homing
-    // (prevents nuisance following errors)
-    // ------------------------------------------------------------
-
-    SAP 212,0,5000
-    SAP 212,1,5000
-    SAP 212,2,5000
-
-    // ------------------------------------------------------------
-    // Configure Reference Search for AXIS 0 (SWITCH IN 0)
-    // ------------------------------------------------------------
-
-    // Mode 1 (left) 65 (right):
-    // Search home switch in POSITIVE DIRECTION (TO THE RIGHT = DOWNWARDS)
-
-    SAP 193,0,65
-
-    // Fast search speed
-    SAP 194,0,2000
-
-    // Slow precision latch speed
-    SAP 195,0,200
-
-    // Apply same velocity to other 2 axes
-    SAP 4,1,2000
-    SAP 4,2,2000
-
-    ROR 1
-    ROR 2
-
-    RFS START,0
-
-WaitHome:
-
-    RFS STATUS,0
-    COMP 0
-    JC EQ,HomeFinished
-
-    // Optional:
-    // If one of the other axis stalls unexpectedly,
-
-    GAP 3,1
-    COMP 0
-    JC EQ,MonitorLoopHoming
-
-    GAP 3,2
-    COMP 0
-    JC EQ,MonitorLoopHoming
-
-    WAIT TICKS,0,1
-    JA WaitHome
-
-HomeFinished:
-
-    // Stop slave axes
-    MST 1
-    MST 2
-
-    WAIT TICKS,0,10
-
-    // Zero all step positions
-    SAP 209,0,0
-    SAP 209,1,0
-    SAP 209,2,0
-
-    GAP 209,0
-    AAP 1,0
-
-    GAP 209,1
-    AAP 1,1
-
-    GAP 209,2
-    AAP 1,2
-
-    GAP 209,0
-    AAP 0,0
-
-    GAP 209,1
-    AAP 0,1
-
-    GAP 209,2
-    AAP 0,2
-
-    WAIT TICKS,0,10
-
-    // Restore normal encoder deviation protection
-
-    SAP 212,0,1000
-    SAP 212,1,1000
-    SAP 212,2,1000
-
-    // Homing complete
-    SGP 10,2,0
-
-    JA MainLoop
-
-MonitorLoopHoming:
-            
-    SAP 17,0, 100000
-    SAP 17,1, 100000
-    SAP 17,2, 100000
-
-    MST 0
-    MST 1
-    MST 2
-
-    WAIT TICKS,0,10
-    SGP 10,2,99
-
-    JA MainLoop
