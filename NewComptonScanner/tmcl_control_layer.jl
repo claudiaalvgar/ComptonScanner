@@ -1,6 +1,7 @@
 module TMCLControlLayer
 
-export set_global_parameter,
+export connect_board,
+       set_global_parameter,
        get_global_parameter,
        wait_for_idle,
        power_on,
@@ -79,6 +80,12 @@ function wait_for_idle(dev; gp::Int = 10)
         state == 0 && break
         sleep(0.1)
     end
+end
+
+function connect_board(ip::AbstractString, port::Int)
+    dev = TMCLDevice("TMCM-3351", ip, port)
+    @info "Connected to board at $ip:$port"
+    return dev
 end
 
 """

@@ -89,6 +89,7 @@ Max_Velocity_Deviation = 213
 // ========================================================================
 // --- INITIALIZATION --- SOME OF THEM INITIALISED IN JULIA
 // ========================================================================
+SGP Max_Speed, 2, 51200
 SGP Max_Acceleration, 2, 51200
 SGP Max_Current, 2, 25
 SGP Standby_Current, 2, 8
@@ -117,7 +118,6 @@ SGP Max_Velocity_Deviation, 2, 30000
 
 // SET THIS FROM JULIA
 //SGP Target_Pos, 2, 100000
-//SGP Max_Speed, 2, 51200
 
 // ========================================================================
 // MAIN STATE MACHINE LOOP

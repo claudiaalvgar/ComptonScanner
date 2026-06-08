@@ -13,23 +13,16 @@ const BOARD_PORT = 4016            # adjust to your board port
 const DEFAULT_SPEED = 51_200   # usteps/s (1 rev/s): 51,200 usteps = 5 mm = 1 motor revolution.
 const MOVE_NSTEPS = 500_000  # example offset above block for measurement position
 
-function connect_board(; ip = BOARD_IP, port = BOARD_PORT)
-    dev = TMCLDevice("TMCM-3351", ip, port)
-    @info "Connected to board at $ip:$port"
-    return dev
-end
-
-
 # ── Interactive use (REPL / included from another script) ────────────────────
-#
-   dev = connect_board()          # or: connect_board(ip="192.168.x.x", port=4016)
+
+   dev = connect_board(BOARD_IP, BOARD_PORT)          # or: connect_board("192.168.x.x", 4016)
    startup!(dev)                  # PowerOn → StartInit → DisableCL → EnableCL → ReferenceZero
    calibrate!(dev)                # SimultaneousCalibration
    #move_and_measure!(dev, MOVE_NSTEPS, DEFAULT_SPEED)
    #exit_measurement_mode!(dev)
-   move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_SPEED)
+   move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_SPEED); wait_for_idle(dev)
    #shutdown!(dev)
-#
+
 # ── Run directly ─────────────────────────────────────────────────────────────
 #
 #   julia ScanSequence.jl
