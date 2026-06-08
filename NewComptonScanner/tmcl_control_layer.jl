@@ -25,6 +25,7 @@ export connect_board,
        shutdown!
 
 using TrinamicMotionControl
+import TrinamicMotionControl: query
 
 # ============================================================
 # IMPORTANT CONSTANT
