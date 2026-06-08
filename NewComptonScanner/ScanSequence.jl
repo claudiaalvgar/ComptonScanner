@@ -7,8 +7,8 @@ include("tmcl_control_layer.jl")
 using .TMCLControlLayer
 
 # ── board connection ──────────────────────────────────────────────────────────
-const BOARD_IP   = "192.168.0.2"   # adjust to your board IP
-const BOARD_PORT = 4016            # adjust to your board port
+const BOARD_IP   = "gelab-serial01"   # adjust to your board IP
+const BOARD_PORT = 2001            # adjust to your board port
 
 const DEFAULT_SPEED = 51_200   # usteps/s (1 rev/s): 51,200 usteps = 5 mm = 1 motor revolution.
 const MOVE_NSTEPS = 500_000  # example offset above block for measurement position
