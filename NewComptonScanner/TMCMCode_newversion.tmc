@@ -21,7 +21,7 @@
 //        13 = Move Axis 0 to absolute encoder position (GP 0 = target)
 //        14 = Move Axis 1 to absolute encoder position (GP 0 = target)
 //        15 = Move Axis 2 to absolute encoder position (GP 0 = target)
-//        16 = Simultaneous Calibration (all 3 axes descend together; first block contact → GP10=99; then call 6,7,8)
+//        16 = Simultaneous Calibration (all 3 axes descend together; each axis MST'd and position saved independently on stall; completes with GP10=0)
 //        99 = Error / Jam Detected (set by EmergencyStop; persists until Julia sends recovery command)
 //       999 = End TMCL program
 
@@ -57,6 +57,10 @@ Max_Deceleration = 17
 CALIB_POS_AXIS0 = 53
 CALIB_POS_AXIS1 = 54
 CALIB_POS_AXIS2 = 55
+
+CALIB_DONE_AXIS0 = 56   // temporary done flag for SimultaneousCalibration (0/1, cleared on exit)
+CALIB_DONE_AXIS1 = 57
+CALIB_DONE_AXIS2 = 58
 
 
 CLgamma_Vmin = 108
@@ -827,25 +831,106 @@ DoneAxis2:
 
 // ========================================================================
 // 16. SIMULTANEOUS CALIBRATION
-// All 3 axes descend toward the copper blocks together.
-// The first axis to contact its block triggers EmergencyStop (GP10=99).
-// Julia detects GP10=99 then calls states 6, 7, 8 in sequence:
-//   - The axis already at its block records instantly (velocity already 0).
-//   - The other two move freely to their blocks (self-locking spindles hold
-//     the contacted axis in place, so the platform does not drag it).
+// All 3 axes descend toward the calibration blocks together.
+// Each axis is monitored independently in a round-robin poll loop.
+// When an axis stalls (velocity = 0 before reaching position 1,000,000),
+// it is MST'd immediately and its encoder position saved to CALIB_POS.
+// Done flags in GP 56/57/58 prevent re-triggering once an axis is saved.
+// Completes normally with GP10=0 when all 3 positions are saved.
+// This matches the behaviour of StartCalibrationSimultaneousAxis in
+// FullTest_CreatorMode.tmc.
 // ========================================================================
 SimultaneousCalibration:
+
     GGP Max_Speed, 2
     AAP 4,0
     AAP 4,1
     AAP 4,2
+
     SCO 0,0,1000000
     SCO 0,1,1000000
     SCO 0,2,1000000
+
     MVP COORD,0,0
     MVP COORD,1,0
     MVP COORD,2,0
-    JA MonitorLoop
+
+    WAIT TICKS,0,100        // let all 3 motors begin moving before polling
+
+    CALC LOAD,0
+    AGP CALIB_DONE_AXIS0,2  // axis0Done = 0
+    AGP CALIB_DONE_AXIS1,2  // axis1Done = 0
+    AGP CALIB_DONE_AXIS2,2  // axis2Done = 0
+
+CalibSimLoop:
+
+    //---------- AXIS 0
+    GGP CALIB_DONE_AXIS0,2
+    COMP 1
+    JC EQ, CalibSimCheck1   // already done, skip
+
+    GAP 3,0                 // read actual velocity
+    COMP 0
+    JC NE, CalibSimCheck1   // still moving, skip
+
+    MST 0
+    GAP 209,0
+    AGP CALIB_POS_AXIS0,2   // CALIB_POS_AXIS0 = encoder pos at block
+    CALC LOAD,1
+    AGP CALIB_DONE_AXIS0,2  // axis0Done = 1
+
+CalibSimCheck1:
+    //---------- AXIS 1
+    GGP CALIB_DONE_AXIS1,2
+    COMP 1
+    JC EQ, CalibSimCheck2   // already done, skip
+
+    GAP 3,1
+    COMP 0
+    JC NE, CalibSimCheck2   // still moving, skip
+
+    MST 1
+    GAP 209,1
+    AGP CALIB_POS_AXIS1,2   // CALIB_POS_AXIS1 = encoder pos at block
+    CALC LOAD,1
+    AGP CALIB_DONE_AXIS1,2  // axis1Done = 1
+
+CalibSimCheck2:
+    //---------- AXIS 2
+    GGP CALIB_DONE_AXIS2,2
+    COMP 1
+    JC EQ, CalibSimAllCheck // already done, skip
+
+    GAP 3,2
+    COMP 0
+    JC NE, CalibSimAllCheck // still moving, skip
+
+    MST 2
+    GAP 209,2
+    AGP CALIB_POS_AXIS2,2   // CALIB_POS_AXIS2 = encoder pos at block
+    CALC LOAD,1
+    AGP CALIB_DONE_AXIS2,2  // axis2Done = 1
+
+CalibSimAllCheck:
+    GGP CALIB_DONE_AXIS0,2
+    COMP 1
+    JC NE, CalibSimWait
+
+    GGP CALIB_DONE_AXIS1,2
+    COMP 1
+    JC NE, CalibSimWait
+
+    GGP CALIB_DONE_AXIS2,2
+    COMP 1
+    JC EQ, CalibSimDone
+
+CalibSimWait:
+    WAIT TICKS,0,1
+    JA CalibSimLoop
+
+CalibSimDone:
+    SGP 10, 2, 0
+    JA MainLoop
 
 // ========================================================================
 // 999. END LOOP OF TMCM PROGRAM - SOP FIRMWARE
