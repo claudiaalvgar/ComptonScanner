@@ -6,9 +6,16 @@ export TMCLDevice,
        wait_for_idle,
        power_on,
        power_off,
-       move,
-       home,
-       init_system,
+       start_init,
+       disable_closed_loop,
+       enable_closed_loop,
+       reference_zero,
+       calibrate_axis,
+       calibrate_simultaneous,
+       enter_measurement_mode,
+       exit_measurement_mode,
+       move_axis_absolute,
+       end_program,
        move_to
 
 using TrinamicMotionControl
@@ -17,24 +24,18 @@ using TrinamicMotionControl
 # IMPORTANT CONSTANT
 # ============================================================
 #=
-field	value	meaning
-9	SGP	"Set Global Parameter"
-gp	e.g. 10	GP index
-GP_BANK	2	Bank 2
-value	e.g. 4	command
+TMCL protocol: Julia writes to GP 10 (Bank 2) to trigger routines in the
+running TMCL state machine. The board polls GP 10 in its MainLoop, dispatches
+to the matching routine, and writes GP 10 = 0 on completion. Julia polls with
+wait_for_idle() to know when the board is done.
 
-Julia	TMCL
-move()	GP10 = 1
-home()	GP10 = 2
-init_system()	GP10 = 3
-power_off()	GP10 = 5
+Parameters are passed via other GPs before setting GP 10:
+  GP 0 (Bank 2) — target position (microsteps or encoder units)
+  GP 4 (Bank 2) — max speed
 
-Bank	Usage
-0	default / firmware
-1	user parameters
-2	custom control logic (like your state machine)
+TMCL command numbers: 9 = SGP, 10 = GGP, both use Bank 2.
 =#
-const GP_BANK = 2   # ← MUST match your TMCL script (you used Bank 2!)
+const GP_BANK = 2   # must match TMCMCode_newversion.tmc (Bank 2)
 
 # ============================================================
 # LOW LEVEL WRAPPERS
@@ -66,20 +67,43 @@ function wait_for_idle(dev; gp::Int = 10)
     end
 end
 
-power_on(dev)   = set_global_parameter(dev, 10, 4)
-power_off(dev)  = set_global_parameter(dev, 10, 5)
-move(dev)       = set_global_parameter(dev, 10, 1)
-home(dev)       = set_global_parameter(dev, 10, 2)
-init_system(dev)= set_global_parameter(dev, 10, 3)
+# State machine commands — GP10 values match TMCMCode_newversion.tmc
+power_on(dev)                = set_global_parameter(dev, 10, 1)
+start_init(dev)              = set_global_parameter(dev, 10, 2)
+disable_closed_loop(dev)     = set_global_parameter(dev, 10, 3)
+enable_closed_loop(dev)      = set_global_parameter(dev, 10, 4)
+reference_zero(dev)          = set_global_parameter(dev, 10, 5)
+calibrate_axis(dev, ax::Int) = set_global_parameter(dev, 10, 5 + ax + 1)  # ax ∈ {0,1,2} → GP10 ∈ {6,7,8}
+calibrate_simultaneous(dev)  = set_global_parameter(dev, 10, 16)
+power_off(dev)               = set_global_parameter(dev, 10, 10)
+enter_measurement_mode(dev)  = set_global_parameter(dev, 10, 11)
+exit_measurement_mode(dev)   = set_global_parameter(dev, 10, 12)
+move_axis_absolute(dev, ax::Int) = set_global_parameter(dev, 10, 12 + ax + 1)  # ax ∈ {0,1,2} → GP10 ∈ {13,14,15}
+end_program(dev)             = set_global_parameter(dev, 10, 999)
 
 # ============================================================
-# HIGH LEVEL COMMAND
+# HIGH LEVEL COMMANDS
 # ============================================================
 
+"""
+Move all 3 axes to an offset above the copper block calibration position.
+GP0 = offset in microsteps (positive = upward), GP4 = max speed.
+Requires a prior calibration pass (commands 6–8 or 16).
+"""
 function move_to(dev, position::Int, speed::Int)
-    set_global_parameter(dev, 0, position)   # GP0 = target position
-    set_global_parameter(dev, 1, speed)      # GP1 = speed
-    move(dev)                                # GP10 = 1
+    set_global_parameter(dev, 0, position)   # GP0 = offset above copper block
+    set_global_parameter(dev, 4, speed)      # GP4 = max speed
+    set_global_parameter(dev, 10, 9)         # GP10 = 9 → StartMove
+end
+
+"""
+Move a single axis to an absolute encoder position.
+ax ∈ {0,1,2}, position in encoder microsteps.
+"""
+function move_axis_to(dev, ax::Int, position::Int, speed::Int)
+    set_global_parameter(dev, 0, position)   # GP0 = absolute encoder target
+    set_global_parameter(dev, 4, speed)      # GP4 = max speed
+    move_axis_absolute(dev, ax)              # GP10 = 13/14/15
 end
 
 end # module

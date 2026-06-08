@@ -204,6 +204,169 @@ should be used instead.
 | CalibrationMode_MetalBlock.tmc      | Calibrate by hitting metal block             |
 | TMCM_FullCreatorMode.tmc            | Awaiting Julia inputs (not tested)           |
 
-# Script meant to be looping in the tmcm board waiting for julia inputs (not tested yet):
+# TMCMCode_newversion.tmc — Julia-driven state machine
 
-TMCMCode_newversion.tmc
+This script implements the same physical behaviour as `FullTest_CreatorMode.tmc` but
+runs as a persistent loop on the TMCM board, controlled by a Julia interface via the
+TMCL global parameter bank 2. Instead of uncommenting routines in Creator Mode, Julia
+writes a command number to **GP 10 (bank 2)** and reads it back as 0 when the task is done.
+
+---
+
+## State machine command register (GP 10, bank 2)
+
+Julia writes one of these values to GP 10 to trigger a routine. The board sets GP 10
+back to 0 when the routine completes. Julia must wait for GP 10 = 0 before sending
+the next command.
+
+| GP 10 | Command | Notes |
+|-------|---------|-------|
+| 0  | Idle / complete | Board is ready for next command |
+| 1  | PowerOn | Set motion params, sync encoder/target. Run once at startup. |
+| 2  | StartInit | Load closed-loop PID parameters. |
+| 3  | DisableClosedLoop | Wait for confirmed disable on all 3 axes. |
+| 4  | EnableClosedLoop | Wait for confirmed enable on all 3 axes. |
+| 5  | ReferenceZero | Set current sled positions as encoder origin (= 0). |
+| 6  | StartCalibrationAxis0 | Move axis 0 down to block, save position. |
+| 7  | StartCalibrationAxis1 | Move axis 1 down to block, save position. |
+| 8  | StartCalibrationAxis2 | Move axis 2 down to block, save position. |
+| 9  | StartMove | Move all 3 axes upward to `CALIB_POS - Target_Pos`. |
+| 10 | PowerOff | Stop motors, disable CL, zero currents. |
+| 11 | EnterMeasurementMode | Stop motors, zero currents, sync target. |
+| 12 | ExitMeasurementMode | Restore currents, re-sync target. |
+| 13 | MoveAxis0 | Move axis 0 to absolute encoder position in GP 0. |
+| 14 | MoveAxis1 | Move axis 1 to absolute encoder position in GP 0. |
+| 15 | MoveAxis2 | Move axis 2 to absolute encoder position in GP 0. |
+| 16 | SimultaneousCalibration | All 3 axes descend together; each MST'd and saved independently on stall. Returns GP10=0 when all 3 done. |
+| 99 | Error (EmergencyStop) | Set by board on hard stop. Board loops waiting for next Julia command. |
+| 999 | EndLoop | Stop the TMCL program. |
+
+---
+
+## Data registers (bank 2)
+
+Julia writes these before sending the relevant command.
+
+| GP index | Name | Used by |
+|----------|------|---------|
+| 0  | Target_Pos | Offset above block in microsteps (command 9). Absolute target for commands 13/14/15. |
+| 4  | Max_Speed | Velocity for all moves (write before command 1 or 9). |
+| 53 | CALIB_POS_AXIS0 | Encoder position at block, axis 0 (written by commands 6 and 16). |
+| 54 | CALIB_POS_AXIS1 | Encoder position at block, axis 1 (written by commands 7 and 16). |
+| 55 | CALIB_POS_AXIS2 | Encoder position at block, axis 2 (written by commands 8 and 16). |
+| 56–58 | CALIB_DONE_AXIS0–2 | Temporary done flags used internally by command 16. Cleared on exit. |
+
+---
+
+## Normal startup sequence (equivalent to Step 1 in FullTest)
+
+```
+SGP 10, 2, 1   # PowerOn      → wait GP10 = 0
+SGP 10, 2, 2   # StartInit    → wait GP10 = 0
+SGP 10, 2, 3   # DisableCL    → wait GP10 = 0
+SGP 10, 2, 4   # EnableCL     → wait GP10 = 0
+SGP 10, 2, 5   # ReferenceZero → wait GP10 = 0
+```
+
+## Calibration + move (equivalent to Steps 2B + 3B in FullTest)
+
+```
+SGP 10, 2, 16  # SimultaneousCalibration → wait GP10 = 0
+SGP 10, 2, 9   # StartMove              → wait GP10 = 0
+```
+
+Or calibrate one axis at a time:
+```
+SGP 10, 2, 6   # axis 0 → wait GP10 = 0
+SGP 10, 2, 7   # axis 1 → wait GP10 = 0
+SGP 10, 2, 8   # axis 2 → wait GP10 = 0
+SGP 10, 2, 9   # StartMove → wait GP10 = 0
+```
+
+## Hard stop recovery
+
+If a hard stop occurs during StartMove (command 9), the board sets GP10 = 99 and
+waits. Julia detects GP10 = 99 and can immediately send command 16 or 6/7/8 to
+re-calibrate — no Step 1 needed as long as the board has not been power-cycled.
+
+## Behaviour equivalence with FullTest_CreatorMode.tmc
+
+Both scripts implement identical physical routines. The only difference is how they
+are driven: FullTest requires manual uncomment/run in Creator Mode per step; this
+script runs autonomously and accepts commands from Julia over the GP register
+interface. The calibration logic (simultaneous 3-axis descent with per-axis
+independent monitoring, immediate MST on stall) is identical.
+
+---
+
+## Julia interface — tmcl_control_layer.jl
+
+`tmcl_control_layer.jl` wraps `TrinamicMotionControl.jl` to expose the state machine
+commands as plain Julia functions. It uses two TMCL opcodes internally:
+
+| TMCL opcode | Julia call | Direction |
+|---|---|---|
+| SGP (9) | `set_global_parameter(dev, gp, value)` | Julia → board |
+| GGP (10) | `get_global_parameter(dev, gp)` | board → Julia |
+
+`wait_for_idle(dev)` polls GP 10 every 100 ms until the board writes it back to 0.
+Always call it after every command — the board is still executing while GP 10 ≠ 0.
+
+### CSUB → Julia translation
+
+Each `CSUB` line in `FullTest_CreatorMode.tmc` maps directly to one Julia function call:
+
+| `FullTest_CreatorMode.tmc` | Julia | GP 10 sent |
+|---|---|---|
+| `CSUB PowerOn` | `power_on(dev)` | 1 |
+| `CSUB StartInit` | `start_init(dev)` | 2 |
+| `CSUB DisableClosedLoop` | `disable_closed_loop(dev)` | 3 |
+| `CSUB EnableClosedLoop` | `enable_closed_loop(dev)` | 4 |
+| `CSUB ReferenceZero` | `reference_zero(dev)` | 5 |
+| `CSUB StartCalibrationSimultaneousAxis` | `calibrate_simultaneous(dev)` | 16 |
+| `CSUB StartMove2` | `move_to(dev, 500000, 51200)` | 9 (writes GP0, GP4 first) |
+| `CSUB EnterMeasurementMode` | `enter_measurement_mode(dev)` | 11 |
+| `CSUB ExitMeasurementMode` | `exit_measurement_mode(dev)` | 12 |
+| `CSUB PowerOff` | `power_off(dev)` | 10 |
+
+**Key difference from `StartMove2`:** `StartMove2` hardcodes −500,000 as the upward
+offset. The Julia `move_to(dev, position, speed)` writes `position` to GP 0 before
+triggering StartMove (command 9), so the offset is a parameter. `move_to(dev, 500000, 51200)`
+is exactly equivalent to `CSUB StartMove2`.
+
+### Single-axis absolute moves (no Creator Mode equivalent)
+
+To re-level one axis independently, write the absolute encoder target to GP 0 and
+call `move_axis_to(dev, axis, position, speed)` (triggers commands 13/14/15).
+
+### Complete measurement sequence
+
+See `ScanSequence.jl` for a ready-to-run script. The sequence is:
+
+```julia
+# ── startup (once per power-cycle) ───────────────────────────────────
+power_on(dev);             wait_for_idle(dev)
+start_init(dev);           wait_for_idle(dev)
+disable_closed_loop(dev);  wait_for_idle(dev)
+enable_closed_loop(dev);   wait_for_idle(dev)
+reference_zero(dev);       wait_for_idle(dev)   # sleds must be above blocks
+
+# ── calibrate + move to first position ───────────────────────────────
+calibrate_simultaneous(dev);        wait_for_idle(dev)
+move_to(dev, 500_000, 51_200);      wait_for_idle(dev)
+
+# ── scan loop ─────────────────────────────────────────────────────────
+for offset in scan_points
+    move_to(dev, offset, 51_200);       wait_for_idle(dev)
+    enter_measurement_mode(dev);        wait_for_idle(dev)
+    # ... acquire data ...
+    exit_measurement_mode(dev);         wait_for_idle(dev)
+end
+
+power_off(dev); wait_for_idle(dev)
+```
+
+`reference_zero` must be called **before** calibration (while sleds are above the
+blocks) and must never be called again after `calibrate_simultaneous`. The calibration
+positions (GP 53/54/55) remain valid for any subsequent `move_to` calls without
+re-calibrating, as long as the board is not power-cycled.
