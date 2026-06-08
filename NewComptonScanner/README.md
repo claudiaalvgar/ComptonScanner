@@ -23,11 +23,24 @@ CSUB ReferenceZero
 Sets motion parameters, PID/regulator values, enables closed loop, and sets the
 current sled positions as coordinate origin (encoder = 0).
 
-**Step 2 — calibrate to copper block (one axis at a time)**
+**Step 2 — calibrate to calibration blocks**
 
-Uncomment only the axis block you want to calibrate in `StartCalibration2`.
-Each axis has to be done independently — user variables in bank 2 persist per axis.
-Make sure all 3 axes have been calibrated before running StartMove2.
+Two options are available:
+
+*Option A — one axis at a time (`StartCalibration2`):*
+Uncomment only the axis block you want to calibrate. Each axis must be done
+independently — user variables in bank 2 persist per axis. Make sure all 3 axes
+have been calibrated before running StartMove2.
+
+*Option B — all 3 axes simultaneously (`StartCalibrationSimultaneousAxis`):*
+```
+CSUB StartCalibrationSimultaneousAxis
+```
+Starts all 3 axes at once, polls them in a round-robin loop, and saves each
+axis's encoder position the instant it stalls against its block. MST is issued
+per axis immediately on stall — no axis is held against its block waiting for
+the others. Use this option when all 3 blocks are in position and the sleds
+start physically above the blocks.
 
 **Step 3 — move upward and hard stop**
 ```
@@ -104,14 +117,21 @@ This means:
 
 ### User variable map (bank 2, accessed via AGP/GGP)
 
-| Index | Name            | Contents                                  |
-|-------|-----------------|-------------------------------------------|
-| 0     | CALIB_POS_AXIS0 | Encoder position at copper block, axis 0  |
-| 1     | CALIB_POS_AXIS1 | Encoder position at copper block, axis 1  |
-| 2     | CALIB_POS_AXIS2 | Encoder position at copper block, axis 2  |
+| Index | Name            | Contents                                                      |
+|-------|-----------------|---------------------------------------------------------------|
+| 0     | CALIB_POS_AXIS0 | Encoder position at calibration block, axis 0                 |
+| 1     | CALIB_POS_AXIS1 | Encoder position at calibration block, axis 1                 |
+| 2     | CALIB_POS_AXIS2 | Encoder position at calibration block, axis 2                 |
+| 3     | axis0Done       | Temporary done flag used by `StartCalibrationSimultaneousAxis` (0/1, cleared on exit) |
+| 4     | axis1Done       | Temporary done flag used by `StartCalibrationSimultaneousAxis` (0/1, cleared on exit) |
+| 5     | axis2Done       | Temporary done flag used by `StartCalibrationSimultaneousAxis` (0/1, cleared on exit) |
 
 User variables persist as long as the board is powered. Calibrating one axis does
-not overwrite the others.
+not overwrite the others. Indices 3/4/5 are only meaningful during execution of
+`StartCalibrationSimultaneousAxis` and are used internally to track which axes have
+already stalled and been saved. Both `StartCalibration2` and
+`StartCalibrationSimultaneousAxis` write to the same indices 0/1/2, so `StartMove2`
+works unchanged after either calibration routine.
 
 ---
 

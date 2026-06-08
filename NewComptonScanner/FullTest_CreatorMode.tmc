@@ -35,6 +35,12 @@ Main:
 //           user variables 0/1/2 (bank 2). Safe to run
 //           any axis independently.
     //CSUB StartCalibration2
+// STEP 2B — calibrate 3 axis at the same time to stainless steel blocks.
+//           Saves encoder position (GAP 209) per axis in
+//           user variables 0/1/2 (bank 2). Safe to run
+//           any axis independently.
+    //CSUB StartCalibrationSimultaneousAxis
+
 // STEP 3B — move upward 500,000 counts above each saved
 //           copper block position. SAP 17 stays at 51,200
 //           for first hard stop; EmergencyStop2 raises it
@@ -258,10 +264,12 @@ RSUB
 
 // =====================================================
 // USER VARIABLE MAP  (bank 2, accessed via AGP/GGP)
-// =====================================================
+// MOVE ALWAYS DOWNWARDS FOR THE CALIBRATION SO MAKE SURE THAT 
+// REFFERENCEZERO POINT IS ALWAYS RUN ABOVE IT
 // Index 0 : CALIB_POS_AXIS0  encoder position at copper block, axis 0
 // Index 1 : CALIB_POS_AXIS1  encoder position at copper block, axis 1
 // Index 2 : CALIB_POS_AXIS2  encoder position at copper block, axis 2
+// =====================================================
 
 StartCalibration2:
 //---------- AXIS 0
@@ -304,6 +312,103 @@ StartCalibration2:
 //    AGP 2,2        // CALIB_POS_AXIS2 = encoder pos at copper block
 
 RSUB
+
+
+// =====================================================
+// SIMULTANEOUS 3-AXIS CALIBRATION
+// Starts all 3 axes at once; MOVING DOWNWARDS (make sure ReferenceZero is marked above the blocks)
+// saves each encoder position (GAP 209) the instant it
+// stalls against the copper block. Uses bank-2 indices
+// Index: 3/4/5 as temporary done flags (cleared on exit).
+// Index 0 : CALIB_POS_AXIS0  encoder position at copper block, axis 0
+// Index 1 : CALIB_POS_AXIS1  encoder position at copper block, axis 1
+// Index 2 : CALIB_POS_AXIS2  encoder position at copper block, axis 2
+// =====================================================
+StartCalibrationSimultaneousAxis:
+
+    SCO 0,0,1000000
+    SCO 0,1,1000000
+    SCO 0,2,1000000
+
+    MVP COORD,0,0
+    MVP COORD,1,0
+    MVP COORD,2,0
+
+    WAIT TICKS,0,100        // let all 3 motors begin moving before polling
+
+    CALC LOAD,0             // Sets accumulator = 0: Initialize done flags to 0
+    AGP 3,2                 // axis0Done = 0 : stores that 0 or 1 into the bank-2
+    AGP 4,2                 // axis1Done = 0
+    AGP 5,2                 // axis2Done = 0
+
+CalibSimLoop:
+
+    //---------- AXIS 0
+    GGP 3,2
+    COMP 1
+    JC EQ, CalibSimCheck1   // already done, skip
+
+    GAP 3,0                 // read actual velocity
+    COMP 0
+    JC NE, CalibSimCheck1   // still moving, skip
+
+    MST 0
+    GAP 209,0
+    AGP 0,2                 // CALIB_POS_AXIS0 = encoder pos at copper block
+    CALC LOAD,1             // Sets accumulator = 1	Mark an axis as done
+    AGP 3,2                 // axis0Done = 1
+
+CalibSimCheck1:
+    //---------- AXIS 1
+    GGP 4,2
+    COMP 1
+    JC EQ, CalibSimCheck2   // already done, skip
+
+    GAP 3,1
+    COMP 0
+    JC NE, CalibSimCheck2   // still moving, skip
+
+    MST 1
+    GAP 209,1
+    AGP 1,2                 // CALIB_POS_AXIS1 = encoder pos at copper block
+    CALC LOAD,1
+    AGP 4,2                 // axis1Done = 1
+
+CalibSimCheck2:
+    //---------- AXIS 2
+    GGP 5,2
+    COMP 1
+    JC EQ, CalibSimAllCheck // already done, skip
+
+    GAP 3,2
+    COMP 0
+    JC NE, CalibSimAllCheck // still moving, skip
+
+    MST 2
+    GAP 209,2
+    AGP 2,2                 // CALIB_POS_AXIS2 = encoder pos at copper block
+    CALC LOAD,1
+    AGP 5,2                 // axis2Done = 1
+
+CalibSimAllCheck:
+    GGP 3,2
+    COMP 1
+    JC NE, CalibSimWait
+
+    GGP 4,2
+    COMP 1
+    JC NE, CalibSimWait
+
+    GGP 5,2
+    COMP 1
+    JC EQ, CalibSimDone
+
+CalibSimWait:
+    WAIT TICKS,0,1
+    JA CalibSimLoop
+
+CalibSimDone:
+    RSUB
 
 
 StartMove2:
