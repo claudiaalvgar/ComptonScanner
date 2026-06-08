@@ -1,7 +1,6 @@
 module TMCLControlLayer
 
-export TMCLDevice,
-       set_global_parameter,
+export set_global_parameter,
        get_global_parameter,
        wait_for_idle,
        power_on,
@@ -15,8 +14,14 @@ export TMCLDevice,
        enter_measurement_mode,
        exit_measurement_mode,
        move_axis_absolute,
+       move_all_axes_to,
+       move_axis_to,
        end_program,
-       move_to
+       startup!,
+       calibrate!,
+       move_and_measure!,
+       exit_measurement_mode!,
+       shutdown!
 
 using TrinamicMotionControl
 
@@ -90,7 +95,7 @@ Move all 3 axes to an offset above the copper block calibration position.
 GP0 = offset in microsteps (positive = upward), GP4 = max speed.
 Requires a prior calibration pass (commands 6–8 or 16).
 """
-function move_to(dev, position::Int, speed::Int)
+function move_all_axes_to(dev, position::Int, speed::Int)
     set_global_parameter(dev, 0, position)   # GP0 = offset above copper block
     set_global_parameter(dev, 4, speed)      # GP4 = max speed
     set_global_parameter(dev, 10, 9)         # GP10 = 9 → StartMove
@@ -104,6 +109,68 @@ function move_axis_to(dev, ax::Int, position::Int, speed::Int)
     set_global_parameter(dev, 0, position)   # GP0 = absolute encoder target
     set_global_parameter(dev, 4, speed)      # GP4 = max speed
     move_axis_absolute(dev, ax)              # GP10 = 13/14/15
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# startup!
+# Must be called once per power-cycle, before calibration.
+# Sleds must be physically above the calibration blocks before calling this.
+# ─────────────────────────────────────────────────────────────────────────────
+function startup!(dev)
+    @info "PowerOn — set motion params, sync encoder/actual/target"
+    power_on(dev);             wait_for_idle(dev)
+
+    @info "StartInit — load closed-loop PID parameters"
+    start_init(dev);           wait_for_idle(dev)
+
+    @info "DisableClosedLoop"
+    disable_closed_loop(dev);  wait_for_idle(dev)
+
+    @info "EnableClosedLoop — clean CL init before any move"
+    enable_closed_loop(dev);   wait_for_idle(dev)
+
+    @info "ReferenceZero — set current sled positions as encoder origin"
+    reference_zero(dev);       wait_for_idle(dev)
+
+    @info "Startup complete."
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# calibrate!
+# Descend all 3 axes simultaneously to the calibration blocks and save positions.
+# Do not call reference_zero again after this.
+# ─────────────────────────────────────────────────────────────────────────────
+function calibrate!(dev)
+    @info "SimultaneousCalibration — all 3 axes descend, stall, positions saved at GP 53/54/55"
+    calibrate_simultaneous(dev); wait_for_idle(dev)
+    @info "Calibration complete."
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# move_and_measure! and exit_measurement_mode!
+# ─────────────────────────────────────────────────────────────────────────────
+function move_and_measure!(dev, nsteps_to_move::Int, speed::Int)
+    @info "Moving to scan position: $nsteps_to_move usteps above block"
+    move_all_axes_to(dev, nsteps_to_move, speed); wait_for_idle(dev)
+
+    @info "EnterMeasurementMode — stop motors, zero currents"
+    enter_measurement_mode(dev); wait_for_idle(dev)
+
+    @info "At measurement position."
+end
+
+function exit_measurement_mode!(dev)
+    
+    @info "ExitMeasurementMode — restore currents"
+    exit_measurement_mode(dev); wait_for_idle(dev)
+end
+# ─────────────────────────────────────────────────────────────────────────────
+# shutdown!
+# ─────────────────────────────────────────────────────────────────────────────
+function shutdown!(dev)
+    @info "PowerOff"
+    power_off(dev); wait_for_idle(dev)
+    @info "Board powered off."
 end
 
 end # module

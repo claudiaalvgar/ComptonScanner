@@ -116,8 +116,8 @@ SGP Max_Encoder_Deviation, 2, 1000
 SGP Max_Velocity_Deviation, 2, 30000
 
 // SET THIS FROM JULIA
-SGP Target_Pos, 2, 100000
-SGP Max_Speed, 2, 51200
+//SGP Target_Pos, 2, 100000
+//SGP Max_Speed, 2, 51200
 
 // ========================================================================
 // MAIN STATE MACHINE LOOP
