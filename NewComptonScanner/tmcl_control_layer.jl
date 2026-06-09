@@ -328,7 +328,12 @@ end
 function calibrate!(dev)
     @info "SimultaneousCalibration — all 3 axes descend, stall, positions saved at GP 53/54/55"
     calibrate_simultaneous(dev); wait_for_idle(dev)
-    @info "Calibration complete."
+    # Persist calibration positions to EEPROM (STGP opcode 11) so they survive power cycles.
+    # Bank 2 variables 0–55 are EEPROM-restorable; GP 53/54/55 are within that range.
+    query(dev, 11, GP_CALIB_POS_AXIS0, GP_BANK, 0)
+    query(dev, 11, GP_CALIB_POS_AXIS1, GP_BANK, 0)
+    query(dev, 11, GP_CALIB_POS_AXIS2, GP_BANK, 0)
+    @info "Calibration complete. Positions saved to EEPROM."
 end
 
 # ─────────────────────────────────────────────────────────────────────────────
