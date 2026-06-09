@@ -531,20 +531,12 @@ MonitorLoop:
 GAP 8,0
 COMP 1
 JC EQ,Axis1_
-
-GAP 3,0
-COMP 0
-JC EQ,EmergencyStop
 //AXIS 1
 Axis1_:
 
     GAP 8,1
     COMP 1
     JC EQ,Axis2_
-
-    GAP 3,1
-    COMP 0
-    JC EQ,EmergencyStop
 //AXIS 2
 Axis2_:
 
@@ -552,9 +544,6 @@ Axis2_:
     COMP 1
     JC EQ,CheckAllDone
 
-    GAP 3,2
-    COMP 0
-    JC EQ,EmergencyStop
 ContinueLoop:
 
     WAIT TICKS,0,1

@@ -34,14 +34,17 @@ const DEFAULT_MAX_SPEED = 51_200
 #Run this without entering measuring mode ####################
 move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 #Run this entering measuring mode ####################
-#move_and_measure!(dev, MOVE_NSTEPS, DEFAULT_SPEED) #Calls move_all_axes_to and enter_measurement_mode
-#exit_measurement_mode!(dev)
+#const MOVE_NSTEPS = 600_000   # microsteps above calibration block
+#const DEFAULT_MAX_SPEED = 51_200
+#move_and_measure!(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED) #Calls move_all_axes_to and enter_measurement_mode
+#end_measurement!(dev)
 
 #### 4th block : Power off and potentially stop code looping on tmcm board ####
 #shutdown!(dev)
 #This stops the TMCM program looping on the board
 #end_program(dev) = set_global_parameter(dev, GP_TMCM_COMMAND, 999)
 #end_program(dev)
+
 
 
 
@@ -53,7 +56,9 @@ move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 #Set speed via SAP and read speed via GAP : This changes motor axis values
 #set_axis_parameter(dev, GP_MAX_SPEED, 0, 51_200) # Set speed for axis 0
 #get_axis_parameter(dev, GP_MAX_SPEED, 0)         # Read speed for axis 0
+#get_axis_parameter(dev,6, 0)         #reads the max voltage
 
 #read the current voltage
 #query(dev, 15, 8, 1, 0)   # GIO command = 15, port 8, bank 1
-#board_status(dev)              # log supply voltage [V] and temperature [°C / K]
+#board_status(dev)         # log supply voltage [V] and temperature [°C / K]
+#read_axis_status(dev)     # get axis status : calibration point and encoder positions for the 3 axis

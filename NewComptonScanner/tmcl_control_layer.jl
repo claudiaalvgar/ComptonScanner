@@ -7,6 +7,7 @@ export connect_board,
        read_supply_voltage,
        read_temperature,
        board_status,
+       read_axis_status,
        power_on,
        power_off,
        start_init,
@@ -24,7 +25,7 @@ export connect_board,
        startup!,
        calibrate!,
        move_and_measure!,
-       exit_measurement_mode!,
+       end_measurement!,
        shutdown!
 
 using TrinamicMotionControl
@@ -219,7 +220,7 @@ end_program(dev)                 = set_global_parameter(dev, GP_TMCM_COMMAND, 99
 # ============================================================
 # HIGH LEVEL COMMANDS
 # ============================================================
-function wait_for_idle(dev; gp::Int = GP_TMCM_COMMAND, timeout_s::Float64 = 10.0)
+function wait_for_idle(dev; gp::Int = GP_TMCM_COMMAND, timeout_s::Float64 = 60.0)
     t0 = time()
     while true
         get_global_parameter(dev, gp) == 0 && break
@@ -240,11 +241,33 @@ read_supply_voltage(dev) = query(dev, 15, 8, 1, 0) / 10.0   # Float64, V
 read_temperature(dev)    = query(dev, 15, 9, 1, 0)           # Int, °C
 
 function board_status(dev)
-    v   = read_supply_voltage(dev)
-    t_C = read_temperature(dev)
-    t_K = t_C + 273.15
-    @info "Board status: voltage supply = $(v) V,  temperature = $(t_C) °C  ($(t_K) K)"
-    return (voltage_V = v, temperature_C = t_C, temperature_K = t_K)
+    supply_V  = read_supply_voltage(dev)        # DC bus voltage (GIO 8, Bank 1)
+    t_C       = read_temperature(dev)
+    t_K       = t_C + 273.15
+    run_I     = get_axis_parameter(dev, 6, 0)   # AP 6: run current (axis 0, % of max)
+    standby_I = get_axis_parameter(dev, 7, 0)   # AP 7: standby current (axis 0, % of max)
+    @info "Board status:"
+    @info "  Supply voltage : $(supply_V) V  (DC bus)"
+    @info "  Temperature    : $(t_C) °C  /  $(t_K) K"
+    @info "  Run current    : $(run_I)  (AP 6, axis 0)"
+    @info "  Standby current: $(standby_I)  (AP 7, axis 0)"
+    return (supply_voltage_V = supply_V,
+            temperature_C    = t_C,
+            temperature_K    = t_K,
+            run_current      = run_I,
+            standby_current  = standby_I)
+end
+
+function read_axis_status(dev)
+    calib = (get_global_parameter(dev, GP_CALIB_POS_AXIS0),
+             get_global_parameter(dev, GP_CALIB_POS_AXIS1),
+             get_global_parameter(dev, GP_CALIB_POS_AXIS2))
+    enc   = (get_axis_parameter(dev, GP_ENCODER_POS, 0),
+             get_axis_parameter(dev, GP_ENCODER_POS, 1),
+             get_axis_parameter(dev, GP_ENCODER_POS, 2))
+    @info "Calibration positions (usteps): axis0=$(calib[1])  axis1=$(calib[2])  axis2=$(calib[3])"
+    @info "Encoder positions     (usteps): axis0=$(enc[1])  axis1=$(enc[2])  axis2=$(enc[3])"
+    return (calib_pos = calib, encoder_pos = enc)
 end
 
 """
@@ -321,8 +344,14 @@ function move_and_measure!(dev, nsteps_to_move::Int, speed::Int)
     @info "At measurement position."
 end
 
-function exit_measurement_mode!(dev)
-    @info "ExitMeasurementMode — restore currents"
+function end_measurement!(dev;
+        max_current     = DEFAULT_MAX_CURRENT,
+        standby_current = DEFAULT_STANDBY_CURRENT)
+    # Write GP6/7 explicitly so the board has the correct values to restore,
+    # regardless of whether power_on was called in this session.
+    set_global_parameter(dev, GP_MAX_CURRENT,     max_current)
+    set_global_parameter(dev, GP_STANDBY_CURRENT, standby_current)
+    @info "ExitMeasurementMode — restore currents (run=$(max_current), standby=$(standby_current))"
     exit_measurement_mode(dev); wait_for_idle(dev)
 end
 # ─────────────────────────────────────────────────────────────────────────────
