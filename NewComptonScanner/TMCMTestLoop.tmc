@@ -1,0 +1,141 @@
+// ========================================================================
+// --- VARIABLES IN BANK 2---
+// ========================================================================
+// The first 56 variables can also be stored permanently in the EEPROM. After booting, their values are
+//automatically restored to the RAM.
+Target_Pos = 0
+Actual_Pos = 1
+Target_Speed = 2
+Actual_Speed = 3
+Max_Speed = 4
+Max_Acceleration = 5
+Max_Current = 6
+Standby_Current = 7
+TMCM_Command = 10
+Max_Deceleration = 17
+
+CALIB_POS_AXIS0 = 53
+CALIB_POS_AXIS1 = 54
+CALIB_POS_AXIS2 = 55
+
+CALIB_DONE_AXIS0 = 56   // temporary done flag for SimultaneousCalibration (0/1, cleared on exit)
+CALIB_DONE_AXIS1 = 57
+CALIB_DONE_AXIS2 = 58
+
+
+CLgamma_Vmin = 108
+CLgamma_Vmax = 109
+CL_Maxgamma = 110
+CL_Beta = 111
+CL_Currentmin = 113
+CL_Currentmax = 114
+CL_Correction_VelocityP = 115
+CL_Correction_VelocityI = 116
+CL_Correction_VelocityI_Clipping = 117
+CL_Correction_VelocityDV_Clock = 118
+CL_Correction_VelocityDV_Clipping = 119
+CL_Upscale_Delay = 120
+CL_Downscale_Delay = 121
+CL_Correction_Pos = 124
+CLmax_Correction_Tolerance = 125
+CL_Startup = 126
+Pos_Window = 134
+Encoder_Pos = 209
+Encoder_Resolution = 210
+Max_Encoder_Deviation = 212
+Max_Velocity_Deviation = 213
+
+
+// ========================================================================
+// --- INITIALIZATION --- ALL GP VALUES ARE SET BY JULIA BEFORE ANY ROUTINE
+// ========================================================================
+// Default values and GP address constants live in testJulia.jl (DEFAULT_* /
+// GP_* constants).  Julia writes every GP register it needs before firing
+// GP_TMCM_COMMAND, so no SGP init is required here.
+SGP TMCM_Command, 2, 0  // Safety reset: ensure command register starts idle
+SGP 77, 0, 1            // Enable auto-start: run this program automatically after every power-up (stored in EEPROM)
+
+// ========================================================================
+// MAIN STATE MACHINE LOOP
+// ========================================================================
+MainLoop:
+    GGP TMCM_Command, 2      // Read the State Machine register (GP 10). The controller is waiting for an external system (Julia) to write a number into GP 10 bank 2
+    
+    COMP 1                  // If Julia wrote '1', power on device
+    JC EQ, PowerOn
+
+    COMP 999
+    JC EQ, EndLoop
+
+    WAIT TICKS, 0, 1
+    
+    JA MainLoop             // Otherwise, loop infinitely and wait
+
+// ========================================================================
+// 1. POWER ON
+// ========================================================================
+PowerOn:
+
+    GGP Encoder_Resolution, 2
+    AAP 210, 0
+    AAP 210, 1
+    AAP 210, 2
+        
+    GGP Max_Speed, 2 
+    AAP 4,0
+    AAP 4,1
+    AAP 4,2
+
+    GGP Max_Acceleration, 2
+    AAP 5,0
+    AAP 5,1
+    AAP 5,2
+
+    GGP Max_Deceleration, 2
+    AAP 17,0
+    AAP 17,1
+    AAP 17,2
+
+    GGP Max_Current, 2
+    AAP 6,0
+    AAP 6,1
+    AAP 6,2
+
+    GGP Standby_Current, 2
+    AAP 7,0
+    AAP 7,1
+    AAP 7,2
+
+    WAIT TICKS,0,10
+
+    // Read resting encoder positions WITHOUT zeroing first.
+    // Syncs actual (AP1) and target (AP0) to the same physical position
+    // so the closed-loop PID sees zero error on activation — no snap.
+    GAP 209,0
+    AAP 1,0
+    AAP 0,0
+
+    GAP 209,1
+    AAP 1,1
+    AAP 0,1
+
+    GAP 209,2
+    AAP 1,2
+    AAP 0,2
+
+    WAIT TICKS,0,10
+
+    SGP 10, 2, 0
+    JA MainLoop
+
+
+// ========================================================================
+// 999. END LOOP OF TMCM PROGRAM - SOP FIRMWARE
+// ========================================================================
+
+EndLoop:
+
+    MST 0
+    MST 1
+    MST 2
+    STOP                     // Stops execution of the TMCL program
