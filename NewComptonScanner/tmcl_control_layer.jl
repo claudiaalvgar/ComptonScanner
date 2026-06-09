@@ -4,6 +4,9 @@ export connect_board,
        set_global_parameter,
        get_global_parameter,
        wait_for_idle,
+       read_supply_voltage,
+       read_temperature,
+       board_status,
        power_on,
        power_off,
        start_init,
@@ -229,6 +232,19 @@ function connect_board(ip::AbstractString, port::Int)
     dev = TMCLDevice("TMCM-3351", ip, port)
     @info "Connected to board at $ip:$port"
     return dev
+end
+
+# GIO opcode = 15.  Bank 1 analog inputs (TMCM-3351 manual, p.40):
+#   port 8 → supply voltage [1/10 V]   port 9 → temperature [°C]
+read_supply_voltage(dev) = query(dev, 15, 8, 1, 0) / 10.0   # Float64, V
+read_temperature(dev)    = query(dev, 15, 9, 1, 0)           # Int, °C
+
+function board_status(dev)
+    v   = read_supply_voltage(dev)
+    t_C = read_temperature(dev)
+    t_K = t_C + 273.15
+    @info "Board status: voltage supply = $(v) V,  temperature = $(t_C) °C  ($(t_K) K)"
+    return (voltage_V = v, temperature_C = t_C, temperature_K = t_K)
 end
 
 """

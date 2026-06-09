@@ -510,7 +510,6 @@ StartMove:
 
     // Absolute targets pre-computed by Julia (calib_pos_n - offset) and
     // written to GP 59/60/61 before triggering this command.
-    // CALC SWAP is not supported on TMCM-3351; arithmetic is done in Julia.
     GGP MOVE_TARGET_AXIS0, 2
     ACO 0,0
 
