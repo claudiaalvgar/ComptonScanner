@@ -52,6 +52,10 @@ CALIB_DONE_AXIS0 = 56   // temporary done flag for SimultaneousCalibration (0/1,
 CALIB_DONE_AXIS1 = 57
 CALIB_DONE_AXIS2 = 58
 
+MOVE_TARGET_AXIS0 = 59  // absolute move target axis 0 (written by Julia: calib0 - offset)
+MOVE_TARGET_AXIS1 = 60  // absolute move target axis 1
+MOVE_TARGET_AXIS2 = 61  // absolute move target axis 2
+
 
 CLgamma_Vmin = 108
 CLgamma_Vmax = 109
@@ -504,26 +508,21 @@ StartMove:
     AAP 4,1
     AAP 4,2
 
-    // Load offset into X register so CALCX SUB can reuse it for all 3 axes
-    GGP Target_Pos, 2        // acc = common offset (positive = going upwards)
-    CALC SWAP, 0             // X  = offset   (save it so CALCX SUB can reuse for all 3 axes)
+    // Absolute targets pre-computed by Julia (calib_pos_n - offset) and
+    // written to GP 59/60/61 before triggering this command.
+    // CALC SWAP is not supported on TMCM-3351; arithmetic is done in Julia.
+    GGP MOVE_TARGET_AXIS0, 2
+    ACO 0,0
 
-    GGP CALIB_POS_AXIS0, 2  // acc = calib pos axis 0  (GP 53, bank 2)
-    CALCX SUB                // acc = calib0 - offset
-    ACO 0,0                  // coordinate 0 of axis 0 = acc
-
-    GGP CALIB_POS_AXIS1, 2  // acc = calib pos axis 1  (GP 54, bank 2)
-    CALCX SUB                // acc = calib1 - offset
+    GGP MOVE_TARGET_AXIS1, 2
     ACO 0,1
 
-    GGP CALIB_POS_AXIS2, 2  // acc = calib pos axis 2  (GP 55, bank 2)
-    CALCX SUB                // acc = calib2 - offset
+    GGP MOVE_TARGET_AXIS2, 2
     ACO 0,2
 
     MVP COORD,0,0
     MVP COORD,1,0
     MVP COORD,2,0
-
 
     JA MonitorLoop
 
