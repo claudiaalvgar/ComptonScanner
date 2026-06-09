@@ -1,41 +1,31 @@
 // ========================================================================
-// TMCM-3351 SYNCHRONOUS 3-AXIS VERTICAL LIFT SCRIPT
+// TMCM-3351  —  3-AXIS VERTICAL LIFT STATE MACHINE
+// Host: Julia (tmcl_control_layer.jl).  Auto-start: GP#77 Bank0 = 1.
+// Julia writes GP Bank 2 params, sets GP10 to trigger a routine,
+// then polls GP10 == 0 (wait_for_idle) to detect completion.
+// All defaults and GP address constants are in tmcl_control_layer.jl.
+//
+// GP10 COMMAND REGISTER
+//    0  Idle (written by board on exit)
+//    1  PowerOn          — apply motion params (GP 4/5/6/7/17/210) to all axes; sync encoder→actual→target
+//    2  StartInit        — apply closed-loop PID params (GP 108–126/212/213) to all axes
+//    3  DisableClosedLoop
+//    4  EnableClosedLoop
+//    5  ReferenceZero    — zero encoder at current position
+//    6  CalibrateAxis0   — descend axis 0 to block; save encoder pos → GP 53
+//    7  CalibrateAxis1   — descend axis 1 to block; save encoder pos → GP 54
+//    8  CalibrateAxis2   — descend axis 2 to block; save encoder pos → GP 55
+//    9  StartMove        — move all axes to (CALIB_POS − GP0); speed from GP4
+//   10  PowerOff         — MST all axes, disable CL, zero currents
+//   11  EnterMeasurement — MST, sync target, zero run/hold currents
+//   12  ExitMeasurement  — re-sync target, restore currents from GP 6/7
+//   13  MoveAxis0        — move axis 0 to absolute encoder pos (GP0 = target)
+//   14  MoveAxis1
+//   15  MoveAxis2
+//   16  SimultaneousCalibration — all 3 axes descend together, each MST'd on stall
+//   99  Error/Jam        — set by EmergencyStop; persists until Julia clears it
+//  999  EndLoop          — MST all axes, STOP
 // ========================================================================
-// GLOBAL PARAMETERS (Bank 2) INTERFACE:
-// GP 0:  Target Position offset above copper block (Microsteps) — write before GP10=9
-// GP 4:  Max Speed (Velocity units) — write before GP10=1 or GP10=9
-// GP 10: State Machine Command Register
-//         0 = Idle / Task Complete
-//         1 = Power ON
-//         2 = Start Init (load closed-loop parameters)
-//         3 = Disable Closed Loop
-//         4 = Enable Closed Loop
-//         5 = Reference Zero
-//         6 = Start Calibration Axis 0
-//         7 = Start Calibration Axis 1
-//         8 = Start Calibration Axis 2
-//         9 = Start Move (calibration-relative, offset from copper block)
-//        10 = Power OFF
-//        11 = Enter Measurement Mode (zero currents, sync target)
-//        12 = Exit  Measurement Mode (restore currents from GP bank 2)
-//        13 = Move Axis 0 to absolute encoder position (GP 0 = target)
-//        14 = Move Axis 1 to absolute encoder position (GP 0 = target)
-//        15 = Move Axis 2 to absolute encoder position (GP 0 = target)
-//        16 = Simultaneous Calibration (all 3 axes descend together; each axis MST'd and position saved independently on stall; completes with GP10=0)
-//        99 = Error / Jam Detected (set by EmergencyStop; persists until Julia sends recovery command)
-//       999 = End TMCL program
-
-
-//Element	Role
-//GP 0	data (position)
-//GP 1	data (speed)
-//GGP	reads data
-//AAP	applies data
-//SGP	write global parameter (set state)
-//GGP	read global parameter
-//SAP	set axis parameter
-//GAP	get axis parameter
-//COMP + JC	decision logic (if/while)
 
 
 // ========================================================================
@@ -87,37 +77,13 @@ Max_Velocity_Deviation = 213
 
 
 // ========================================================================
-// --- INITIALIZATION --- SOME OF THEM INITIALISED IN JULIA
+// --- INITIALIZATION --- ALL GP VALUES ARE SET BY JULIA BEFORE ANY ROUTINE
 // ========================================================================
-SGP Max_Speed, 2, 51200
-SGP Max_Acceleration, 2, 51200
-SGP Max_Current, 2, 25
-SGP Standby_Current, 2, 8
-SGP TMCM_Command, 2, 0  // Ensure controller starts in a defined communication/state mode
-SGP Max_Deceleration, 2, 51200
-SGP CLgamma_Vmin, 2, 300000
-SGP CLgamma_Vmax, 2, 600000
-SGP CL_Maxgamma, 2, 255
-SGP CL_Beta, 2, 255
-SGP CL_Currentmin, 2, 50
-SGP CL_Currentmax, 2, 240
-SGP CL_Correction_VelocityP, 2, 3000
-SGP CL_Correction_VelocityI, 2, 20
-SGP CL_Correction_VelocityI_Clipping, 2, 10
-SGP CL_Correction_VelocityDV_Clock, 2, 0
-SGP CL_Correction_VelocityDV_Clipping, 2, 100000
-SGP CL_Upscale_Delay, 2, 1000
-SGP CL_Downscale_Delay, 2, 10000
-SGP CL_Correction_Pos, 2, 65536
-SGP CLmax_Correction_Tolerance, 2, 100
-SGP CL_Startup, 2, 25
-SGP Pos_Window, 2, 100
-SGP Encoder_Resolution, 2, 2000
-SGP Max_Encoder_Deviation, 2, 1000
-SGP Max_Velocity_Deviation, 2, 30000
-
-// SET THIS FROM JULIA
-//SGP Target_Pos, 2, 100000
+// Default values and GP address constants live in tmcl_control_layer.jl
+// (DEFAULT_* / GP_* constants).  Julia writes every GP register it needs
+// before firing GP_TMCM_COMMAND, so no SGP init is required here.
+SGP TMCM_Command, 2, 0  // Safety reset: ensure command register starts idle
+SGP 77, 0, 1            // Enable auto-start: run this program automatically after every power-up (stored in EEPROM)
 
 // ========================================================================
 // MAIN STATE MACHINE LOOP
