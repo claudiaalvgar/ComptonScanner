@@ -699,14 +699,14 @@ ExitMeasurementMode:
     AAP 0,2
 
     GGP Max_Current, 2
-    AAP 6,0
-    AAP 6,1
-    AAP 6,2
+    SAP 6,0,25
+    SAP 6,1,25
+    SAP 6,2,25
 
     GGP Standby_Current, 2
-    AAP 7,0
-    AAP 7,1
-    AAP 7,2
+    SAP 7,0,8
+    SAP 7,1,8
+    SAP 7,2,8
 
     WAIT TICKS,0,50         // wait for CL to stabilise at current position
 

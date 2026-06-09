@@ -42,7 +42,6 @@ move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 #### 4th block : Power off and potentially stop code looping on tmcm board ####
 #shutdown!(dev)
 #This stops the TMCM program looping on the board
-#end_program(dev) = set_global_parameter(dev, GP_TMCM_COMMAND, 999)
 #end_program(dev)
 
 

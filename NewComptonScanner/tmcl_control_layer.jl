@@ -347,10 +347,12 @@ end
 function end_measurement!(dev;
         max_current     = DEFAULT_MAX_CURRENT,
         standby_current = DEFAULT_STANDBY_CURRENT)
-    # Write GP6/7 explicitly so the board has the correct values to restore,
-    # regardless of whether power_on was called in this session.
-    set_global_parameter(dev, GP_MAX_CURRENT,     max_current)
-    set_global_parameter(dev, GP_STANDBY_CURRENT, standby_current)
+    # SAP (direct axis parameter write) works reliably with CL active.
+    # AAP/GGP inside ExitMeasurementMode does not — CL interferes.
+    for ax in 0:2
+        set_axis_parameter(dev, 6, ax, max_current)
+        set_axis_parameter(dev, 7, ax, standby_current)
+    end
     @info "ExitMeasurementMode — restore currents (run=$(max_current), standby=$(standby_current))"
     exit_measurement_mode(dev); wait_for_idle(dev)
 end
