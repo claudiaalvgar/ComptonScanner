@@ -287,7 +287,7 @@ The TMCM-3351 has two independent power supplies:
 - **Motor supply** — the high-voltage/high-current rail that drives the motor coils
   and encoder interfaces.  The red button cuts this rail.
 - **Logic supply** — the MCU, RAM, and USB interface.  When the board is connected
-  to a PC via USB, the bus provides ~5 V which is enough to keep the MCU alive even
+  to a PC via USB, the bus provides ~0.5 V which is enough to keep the MCU alive even
   when the motor supply is cut.
 
 This means a red-button press/unpress is **not a full power-off** — it is a
@@ -296,9 +296,10 @@ is dead.  A full unplug (or powering off the PC-side USB) is the only event that
 actually clears the MCU RAM.
 
 The small encoder drift observed after a red-button press (~1500 usteps) comes from
-the encoder interface losing its supply: when motor power returns the encoder may not
-resume at exactly the same count, and the sled can move fractionally when holding
-current drops to zero.
+the closed-loop disable/enable cycle: the safety init disables CL and zeros currents,
+then `startup!` disables and re-enables CL again.  Each time CL is disabled the motor
+is no longer actively held at its target position and the sled can move slightly under
+gravity or mechanical play before CL is restored.
 
 **Consequence: unplugging USB after the red button is equivalent to a full unplug.**
 If the USB cable is disconnected while the motor supply is also off (i.e. after
@@ -428,7 +429,7 @@ executing its routine while GP 10 ≠ 0.
 | `move_and_measure!(dev, nsteps, speed)` | `move_all_axes_to` → `enter_measurement_mode` | Move to scan position and de-energize motors. |
 | `end_measurement!(dev)` | SAP current restore → `exit_measurement_mode` | Restore currents via SAP (more reliable than AAP/GGP with CL active). |
 | `shutdown!(dev)` | `power_off` | Clean pre-power-off: MST, disable CL, zero currents. |
-| `RefZero_run_only_once_after_unplugging_board!(dev)` | `reference_zero` | **Only after unplugging the board** — zeros encoder at current sled positions. |
+| `RefZero_run_only_once_after_unplugging_board!(dev)` | `reference_zero` | **Only after full power loss** (board unplugged, or red button pressed with USB also disconnected) — zeros encoder at current sled positions. Not needed after a red-button press/unpress with USB still connected, because the encoder positions survive in MCU RAM. |
 
 ### Diagnostic functions
 
@@ -443,11 +444,16 @@ executing its routine while GP 10 ≠ 0.
 
 ## Startup scenarios
 
-### Scenario A — Board unplugged / full power cycle (`After_UnplugBoard.jl`)
+### Scenario A — Full power loss (`After_UnplugBoard.jl`)
 
-Everything is lost: the TMCL program is gone, encoder zero reference is gone,
-calibration positions are gone.  **Sleds must be above the calibration blocks
-before running this.**
+**When this applies:** the board was fully unplugged, OR the red button was pressed
+**and** the USB cable was also disconnected (or the PC was off).  In both cases the
+MCU RAM is cleared — there is no USB supply keeping the logic alive — so everything
+is lost: the TMCL program is gone, encoder zero reference is gone, and all AP values
+(encoder positions, CL state, currents) are gone.  Only the EEPROM-backed calibration
+positions (GP 53/54/55) could technically survive, but without a valid encoder zero
+reference they are meaningless.  **Sleds must be above the calibration blocks before
+running this.**
 
 ```julia
 # 1. Load TMCMCode_newversion.tmc onto the board via TMCL-IDE (Creator Mode → upload)
@@ -480,11 +486,14 @@ positions, corrupting the coordinate system and breaking hard-stop detection.
 
 ---
 
-### Scenario B — Red button pressed and unpressed (`AfterRedButton_CodeLooping.jl`)
+### Scenario B — Red button pressed and unpressed, USB still connected (`AfterRedButton_CodeLooping.jl`)
 
-The TMCL program was already loaded and is looping.  After unpressing the red button
-the firmware auto-restarts, disables CL, and zeros currents.  The encoder zero
-reference and calibration positions (GP 53/54/55) survive in EEPROM.
+**When this applies:** the red button was pressed and unpressed **while the USB cable
+remained connected to the PC**.  Because USB keeps the MCU logic supply alive, the
+MCU RAM is never cleared — encoder positions, calibration positions, and CL PID
+parameters all survive.  The firmware auto-restarts (TMCL program runs from the top),
+disables CL, and zeros currents via the safety init, but the underlying AP and GP
+values in RAM are intact.
 
 **Verified measured behavior:**
 
