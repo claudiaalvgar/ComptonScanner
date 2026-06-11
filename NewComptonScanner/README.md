@@ -479,7 +479,7 @@ running this.**
 # 1. Load TMCMCode_newversion.tmc onto the board via TMCL-IDE (Creator Mode → upload)
 
 # 2. Run After_UnplugBoard.jl
-dev = connect_board("gelab-serial01", 2001)
+dev = connect_board(BOARD_IP, BOARD_PORT)
 sleep(2.0)
 
 # Verify state: random values expected, CL must be DISABLED
@@ -518,8 +518,7 @@ and re-enters the MainLoop.
 
 **If `end_program` was called before pressing the red button:** the TMCL program is
 already stopped and will not restart on its own when the red button is released
-(no MCU reset occurred).  Only a full power cycle will trigger the auto-start and
-bring the program back.  In that case use **Scenario C** instead.
+(no MCU reset occurred).  In that case use **Scenario C** instead.
 
 **Verified measured behavior:**
 
@@ -555,7 +554,7 @@ exactly where they are until the operator explicitly calls `startup!` to restore
 controlled motion.
 
 ```julia
-dev = connect_board("gelab-serial01", 2001)
+dev = connect_board(BOARD_IP, BOARD_PORT)
 sleep(2.0)
 
 # Calib positions should still be present; encoder may have drifted; CL is DISABLED
@@ -580,14 +579,11 @@ move_all_axes_to(dev, 500_000, 51_200); wait_for_idle(dev)
 
 ### Scenario C — Normal session, clean startup (`ScanSequence.jl`)
 
-Board was powered off cleanly (`shutdown!` + `end_program`) and then powered back on.
-After `end_program` the TMCL program stops; it restarts automatically on the next
-power-on via the auto-start mechanism (GP 77, Bank 0 = 1 in EEPROM).  The TMCL code
-is therefore looping and waiting for Julia commands.  Calibration positions in EEPROM
-are valid.
+Board was powered off cleanly (`shutdown!` + `end_program`). Need to load again the TMCL code
+that would start looping and waiting for Julia commands.
 
 ```julia
-dev = connect_board("gelab-serial01", 2001)
+dev = connect_board(BOARD_IP, BOARD_PORT)
 sleep(2.0)                      # let board reach MainLoop before sending commands
 
 startup!(dev)                   # PowerOn → StartInit → DisableCL → EnableCL
@@ -614,7 +610,7 @@ end_program(dev)    # stop the TMCL loop on the board
 
 ## Calibration and encoder zero — key rules
 
-1. **`ReferenceZero` is only called once after unplugging the board**, while sleds are
+1. **`ReferenceZero` is only called once after unplugging the board (or with the red button pressed plus USB disconnected i.e. board unpowered)**, while sleds are
    above the blocks.  It sets encoder = 0 at the current sled positions.  After this,
    the zero reference is valid for the lifetime of the power-on session.
 
@@ -625,8 +621,8 @@ end_program(dev)    # stop the TMCL loop on the board
 3. **After `calibrate!`, `calib_pos == encoder_pos` exactly.**
    `read_axis_status` showing identical values for both columns confirms a clean calibration.
 
-4. **Calibration positions survive a red-button press/unpress** (EEPROM-backed).
-   They do **not** survive unplugging the board (encoder zero reference is lost).
+4. **Calibration positions survive a red-button press/unpress (with USB connected)** (EEPROM).
+   They do **not** survive unplugging the board or pressing the red button plus disconnecting the USB (encoder zero reference is lost).
 
 5. **Never call `reference_zero` after calibration.**  The CL controller's internal
    commutation state would no longer match the new encoder = 0 reference, causing
@@ -654,6 +650,11 @@ end_program(dev)    # stop the TMCL loop on the board
 Note: `end_measurement!` in Julia uses SAP (direct axis parameter write) rather than
 AAP/GGP to restore currents, because AAP/GGP is unreliable with CL active.
 
+After `exit_measurement_mode` the system is fully operational — CL is still enabled
+and currents are restored.  Because the sleds were moved upward before entering
+measurement mode they are above the calibration blocks, so `calibrate!` can be called
+again at any point after `exit_measurement_mode` without any additional steps.
+
 ---
 
 ## Clean shutdown procedure
@@ -665,8 +666,7 @@ shutdown!(dev)      # MST all axes, disable CL, zero currents
 end_program(dev)    # stop the TMCL loop on the board
 ```
 
-After `end_program` the TMCL program is stopped — it will only restart on the next
-full power cycle (auto-start via GP 77 in EEPROM).  If the red button is pressed
+After `end_program` the TMCL program stops looping in the board.  If the red button is pressed
 after `end_program` with USB still connected, no MCU reset occurs, so the program
 does **not** restart.  A full power cycle is required to bring it back.
 
