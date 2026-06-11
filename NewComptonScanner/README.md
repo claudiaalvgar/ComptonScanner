@@ -509,11 +509,17 @@ positions, corrupting the coordinate system and breaking hard-stop detection.
 ### Scenario B — Red button pressed and unpressed, USB still connected (`AfterRedButton_CodeLooping.jl`)
 
 **When this applies:** the red button was pressed and unpressed **while the USB cable
-remained connected to the PC**.  Because USB keeps the MCU logic supply alive, the
-MCU RAM is never cleared — encoder positions, calibration positions, and CL PID
-parameters all survive.  The firmware auto-restarts (TMCL program runs from the top),
-disables CL, and zeros currents via the safety init, but the underlying AP and GP
-values in RAM are intact.
+remained connected to the PC**, AND `end_program` was **not** called before pressing
+it (i.e. the TMCL program was still looping on the board at the moment of the press).
+Because USB keeps the MCU logic supply alive, the MCU RAM is never cleared — encoder
+positions, calibration positions, and CL PID parameters all survive.  The TMCL
+program restarts from the top, runs the safety init (disables CL, zeros currents),
+and re-enters the MainLoop.
+
+**If `end_program` was called before pressing the red button:** the TMCL program is
+already stopped and will not restart on its own when the red button is released
+(no MCU reset occurred).  Only a full power cycle will trigger the auto-start and
+bring the program back.  In that case use **Scenario C** instead.
 
 **Verified measured behavior:**
 
@@ -574,8 +580,11 @@ move_all_axes_to(dev, 500_000, 51_200); wait_for_idle(dev)
 
 ### Scenario C — Normal session, clean startup (`ScanSequence.jl`)
 
-Board was powered off cleanly (`shutdown!` + `end_program`).  TMCL code is loaded
-and looping.  Calibration positions in EEPROM are valid.
+Board was powered off cleanly (`shutdown!` + `end_program`) and then powered back on.
+After `end_program` the TMCL program stops; it restarts automatically on the next
+power-on via the auto-start mechanism (GP 77, Bank 0 = 1 in EEPROM).  The TMCL code
+is therefore looping and waiting for Julia commands.  Calibration positions in EEPROM
+are valid.
 
 ```julia
 dev = connect_board("gelab-serial01", 2001)
@@ -655,6 +664,11 @@ Before pressing the red button to power off, always run:
 shutdown!(dev)      # MST all axes, disable CL, zero currents
 end_program(dev)    # stop the TMCL loop on the board
 ```
+
+After `end_program` the TMCL program is stopped — it will only restart on the next
+full power cycle (auto-start via GP 77 in EEPROM).  If the red button is pressed
+after `end_program` with USB still connected, no MCU reset occurs, so the program
+does **not** restart.  A full power cycle is required to bring it back.
 
 If `shutdown!` is skipped, the next startup still works correctly because the firmware
 disables CL and zeros currents on every program start.  Calling `shutdown!` first is
