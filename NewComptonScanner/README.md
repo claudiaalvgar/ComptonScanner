@@ -5,6 +5,19 @@ Three sleds move vertically. Positive encoder direction = downward, negative = u
 
 ---
 
+## Repository files
+
+| File | Type | Purpose |
+|------|------|---------|
+| `TMCMCode_newversion.tmc` | TMCL firmware | Persistent state machine running on the board. Loaded once via TMCL-IDE; auto-starts on every power-on. Controlled by Julia via GP 10. |
+| `tmcl_control_layer.jl` | Julia module | Full API wrapping every board command as a named Julia function. Include this in any script. |
+| `ScanSequence.jl` | Julia script | Normal session: startup → calibration → move. Use after a clean power-off or at the start of a measurement day. |
+| `AfterRedButton_CodeLooping.jl` | Julia script | Resume after a red-button press/unpress **with USB still connected**. Calibration and encoder positions survive; only `startup!` is required. |
+| `After_UnplugBoard.jl` | Julia script | Full recovery after complete power loss (board unplugged, or red button pressed with USB also disconnected). Must reload TMCL code, call `RefZero` once, then calibrate. |
+| `FullTest_CreatorMode.tmc` | TMCL (legacy) | Self-contained manual script for TMCL-IDE Creator Mode. No Julia required. Used for initial hardware bring-up and hard-stop reproducibility tests. |
+
+---
+
 ## Main script: FullTest_CreatorMode.tmc
 
 Single self-contained TMCL script with all routines. Open in TMCL-IDE Creator Mode,
@@ -497,16 +510,17 @@ values in RAM are intact.
 
 **Verified measured behavior:**
 
-| State | axis 0 calib (usteps) | axis 1 calib | axis 2 calib | Closed loop |
-|-------|-----------------------|--------------|--------------|-------------|
-| Before red button | 293964 | 326093 | 299489 | ENABLED |
-| After unpress (firmware restarted) | 293964 | 326093 | 299489 | **DISABLED** |
-| After `startup!` | 293964 | 326093 | 299489 | **ENABLED** |
-| After `calibrate!` | 292966 | 326093 | 300262 | ENABLED |
+| State | calib ax0 | calib ax1 | calib ax2 | encoder ax0 | encoder ax1 | encoder ax2 | CL |
+|-------|-----------|-----------|-----------|-------------|-------------|-------------|----|
+| Before red button | 293964 | 326093 | 299489 | −205945 | −173664 | −200263 | ENABLED |
+| After unpress (firmware restarted) | 293964 | 326093 | 299489 | −207481 | −173689 | −199751 | **DISABLED** |
+| After `startup!` | 293964 | 326093 | 299489 | −207232 | −173465 | −199552 | **ENABLED** |
+| After `calibrate!` | 292966 | 326093 | 300262 | 292966 | 326093 | 300262 | ENABLED |
 
-Encoder positions drift slightly (~1500 usteps ≈ 0.15 mm) while CL is inactive
-during the red-button period — this is normal.  After `calibrate!`, encoder positions
-match calibration positions exactly.
+Encoder positions drift slightly (~1500 usteps ≈ 0.15 mm) during the red-button
+period because CL is inactive and the sled is no longer actively held.  This is
+normal.  After `calibrate!`, encoder positions match calibration positions exactly
+— both columns show the same values.
 
 ```julia
 dev = connect_board("gelab-serial01", 2001)
