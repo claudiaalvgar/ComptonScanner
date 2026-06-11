@@ -7,14 +7,21 @@ Three sleds move vertically. Positive encoder direction = downward, negative = u
 
 ## Repository files
 
+**Loop mode — Julia-driven (active workflow)**
+
 | File | Type | Purpose |
 |------|------|---------|
 | `TMCMCode_newversion.tmc` | TMCL firmware | Persistent state machine running on the board. Loaded once via TMCL-IDE; auto-starts on every power-on. Controlled by Julia via GP 10. |
-| `tmcl_control_layer.jl` | Julia module | Full API wrapping every board command as a named Julia function. Include this in any script. |
+| `tmcl_control_layer.jl` | Julia module | Full API wrapping every board command as a named Julia function. Included by all scripts below. |
 | `ScanSequence.jl` | Julia script | Normal session: startup → calibration → move. Use after a clean power-off or at the start of a measurement day. |
-| `AfterRedButton_CodeLooping.jl` | Julia script | Resume after a red-button press/unpress **with USB still connected**. Calibration and encoder positions survive; only `startup!` is required. |
+| `AfterRedButton_CodeLooping.jl` | Julia script | Resume after a red-button press/unpress **with USB still connected**. Calibration and encoder positions survive in RAM; only `startup!` is required. |
 | `After_UnplugBoard.jl` | Julia script | Full recovery after complete power loss (board unplugged, or red button pressed with USB also disconnected). Must reload TMCL code, call `RefZero` once, then calibrate. |
-| `FullTest_CreatorMode.tmc` | TMCL (legacy) | Self-contained manual script for TMCL-IDE Creator Mode. No Julia required. Used for initial hardware bring-up and hard-stop reproducibility tests. |
+
+**Creator Mode — manual TMCL-IDE workflow (legacy)**
+
+| File | Type | Purpose |
+|------|------|---------|
+| `FullTest_CreatorMode.tmc` | TMCL script | Self-contained script for TMCL-IDE Creator Mode. No Julia required. Uncomment the step you want and execute. Used for initial hardware bring-up and hard-stop reproducibility tests. |
 
 ---
 
@@ -512,8 +519,8 @@ values in RAM are intact.
 
 | State | calib ax0 | calib ax1 | calib ax2 | encoder ax0 | encoder ax1 | encoder ax2 | CL |
 |-------|-----------|-----------|-----------|-------------|-------------|-------------|----|
-| Before red button | 293964 | 326093 | 299489 | −205945 | −173664 | −200263 | ENABLED |
-| After unpress (firmware restarted) | 293964 | 326093 | 299489 | −207481 | −173689 | −199751 | **DISABLED** |
+| Load tmcm code. Before red button | 293964 | 326093 | 299489 | −205945 | −173664 | −200263 | DISABLED |
+| Press and After unpress red button (tmcm code looping is restarted) | 293964 | 326093 | 299489 | −207481 | −173689 | −199751 | **DISABLED** |
 | After `startup!` | 293964 | 326093 | 299489 | −207232 | −173465 | −199552 | **ENABLED** |
 | After `calibrate!` | 292966 | 326093 | 300262 | 292966 | 326093 | 300262 | ENABLED |
 
@@ -521,6 +528,25 @@ Encoder positions drift slightly (~1500 usteps ≈ 0.15 mm) during the red-butto
 period because CL is inactive and the sled is no longer actively held.  This is
 normal.  After `calibrate!`, encoder positions match calibration positions exactly
 — both columns show the same values.
+
+This drift could in principle be eliminated by removing the `SAP 129, x, 0` lines
+from the safety-init block at the top of `TMCMCode_newversion.tmc`, so that CL
+remains enabled when the board restarts after a red-button press.  However, this
+is intentionally not done because it would be dangerous:
+
+- When the red button is pressed, motor power is cut abruptly.  The CL controller
+  was actively driving the motor at the moment of cut; its integrator has accumulated
+  error and its last commanded target is still stored in AP 0.
+- When the red button is released and motor power returns, a CL controller that was
+  never disabled would immediately command maximum current to drive the sled back to
+  that target — a sudden, uncontrolled movement with no warning.
+- The operator releasing the red button expects the system to be stationary and
+  inert.  An emergency stop that re-energizes the motors automatically on release
+  defeats the purpose of the stop.
+
+Disabling CL in the safety init ensures that when power returns the sleds stay
+exactly where they are until the operator explicitly calls `startup!` to restore
+controlled motion.
 
 ```julia
 dev = connect_board("gelab-serial01", 2001)
