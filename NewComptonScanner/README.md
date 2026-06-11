@@ -253,7 +253,7 @@ sending the next command (use `wait_for_idle(dev)`).
 | GP 10 | Routine name | Julia function | Notes |
 |-------|-------------|---------------|-------|
 | 0 | Idle | — | Board is ready for the next command |
-| 1 | PowerOn | `power_on(dev)` | Write motion params (GP 4/5/6/7/17/210) to all axes via AAP; sync encoder→actual→target atomically on the board |
+| 1 | PowerOn | `power_on(dev)` | Write motion params (GP 4/5/6/7/17/210) to all axes via AAP; sync encoder→actual→target |
 | 2 | StartInit | `start_init(dev)` | Write all closed-loop PID params (GP 108–126/212/213) to all axes via AAP |
 | 3 | DisableClosedLoop | `disable_closed_loop(dev)` | SAP 129,x,0; polls AP 133 until confirmed disabled on all 3 axes |
 | 4 | EnableClosedLoop | `enable_closed_loop(dev)` | SAP 129,x,1; polls AP 133 until confirmed enabled on all 3 axes |
@@ -276,9 +276,57 @@ sending the next command (use `wait_for_idle(dev)`).
 
 ## GP Bank 2 data registers
 
-Julia writes these **before** sending the relevant command.  Registers 0–55 are
-EEPROM-restorable — `calibrate!` explicitly saves GP 53/54/55 to EEPROM (STGP
-opcode 11) so calibration positions survive a power cycle.
+Julia writes these **before** sending the relevant command.
+
+**Memory types and what survives each power event:**
+
+The TMCM-3351 has two distinct memory spaces with different survival rules:
+
+- **Global Parameters (GP, Bank 2) — board RAM**, readable/writable via GGP/SGP.
+  Indices 0–55 *can* be saved to EEPROM with the STGP opcode, but they are not
+  saved automatically.  `calibrate!` explicitly calls STGP on GP 53/54/55 so the
+  calibration block positions survive a full power cut.  All other GP values (motion
+  params, PID params, move targets) are not STGP'd and are rewritten by Julia at the
+  start of every session via `startup!`.
+
+- **Axis Parameters (AP) — axis-local RAM**, readable/writable via GAP/SAP.  AP values
+  like closed-loop enable (AP 129), run/standby current (AP 6/7), and encoder position
+  (AP 209) **survive a red-button press/unpress** because the board MCU stays powered
+  and its RAM is not cleared.  They are lost only on a full unplug.
+
+**Why closed-loop is DISABLED after a red-button press/unpress** despite AP values
+surviving in RAM:
+
+The red button restarts the TMCL program from the beginning.  The safety-init block
+at the top of `TMCMCode_newversion.tmc` runs unconditionally before the main loop and
+explicitly overwrites those AP values:
+
+```tmcl
+SAP 129, 0, 0   // disable closed-loop axis 0  (overwrites whatever was in AP 129)
+SAP 6,   0, 0   // zero run current axis 0
+SAP 7,   0, 0   // zero standby current axis 0
+```
+
+CL is disabled not because the AP value was lost, but because the firmware
+deliberately forces it off for safety on every restart.  Encoder positions (AP 209)
+are intentionally left untouched by the safety init — they persist with a small
+mechanical drift (~1500 usteps) while the motors were de-energized.
+
+| Value | Red button press/unpress | Full unplug |
+|-------|--------------------------|-------------|
+| Calibration positions GP 53/54/55 | **Yes** — GP Bank 2 RAM + EEPROM backup | **Yes** — EEPROM backup by `calibrate!` |
+| Encoder positions AP 209 | **Yes** — AP RAM survives; small drift expected | **No** — RAM cleared; random on boot |
+| Closed-loop enable AP 129 | AP survives but **firmware safety init disables it** | No — RAM cleared, safety init disables it |
+| Run/standby current AP 6/7 | AP survives but **firmware safety init zeros them** | No — RAM cleared, safety init zeros them |
+| CL PID params AP 108–126 | **Yes** — AP RAM survives; `startup!` rewrites anyway | No — RAM cleared; `startup!` required |
+| TMCL program code | **Yes** — EEPROM | **No** — must reload via TMCL-IDE |
+
+This is why the startup sequence after a red button is shorter than after unplugging:
+calibration positions and encoder zero reference are still valid, but `startup!` is
+always required to re-apply currents and re-enable closed loop.
+
+`calibrate!` explicitly saves GP 53/54/55 to EEPROM (STGP opcode 11) so calibration
+positions survive a full power cut.
 
 | GP index | Julia constant | Written by | Read by |
 |----------|---------------|-----------|--------|
