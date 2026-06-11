@@ -300,6 +300,16 @@ the encoder interface losing its supply: when motor power returns the encoder ma
 resume at exactly the same count, and the sled can move fractionally when holding
 current drops to zero.
 
+**Consequence: unplugging USB after the red button is equivalent to a full unplug.**
+If the USB cable is disconnected while the motor supply is also off (i.e. after
+pressing the red button), the logic supply drops, the MCU RAM is cleared, and all
+AP values — including encoder positions — are lost.  This scenario is identical to
+unplugging everything: the TMCL program must be reloaded, `RefZero` must be called
+once to re-establish the encoder zero, and a full calibration is required.  The only
+thing that would still survive is the EEPROM-backed calibration positions (GP 53/54/55
+saved by `calibrate!`), but without a valid encoder zero reference those positions
+are meaningless until `RefZero` is run again.
+
 The TMCM-3351 has two distinct memory spaces with different survival rules:
 
 - **Global Parameters (GP, Bank 2) — board RAM**, readable/writable via GGP/SGP.
