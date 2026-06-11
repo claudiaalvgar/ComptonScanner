@@ -72,6 +72,8 @@ move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 
 #read the current voltage
 #query(dev, 15, 8, 1, 0)   # GIO command = 15, port 8, bank 1
+
+#Read status of the board
 #board_status(dev)         # log supply voltage [V] and temperature [°C / K]
 #read_axis_status(dev)     # get axis status : calibration point and encoder positions for the 3 axis
 #read_closed_loop_status(dev)
