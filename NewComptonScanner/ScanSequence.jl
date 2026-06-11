@@ -23,21 +23,34 @@ sleep(2.0)                     # allow board to reach MainLoop before sending co
 #enable_closed_loop(dev);  wait_for_idle(dev)   # clean CL init before any move
 #reference_zero(dev);      wait_for_idle(dev)   # set current sled positions as encoder origin
 #Or just startup ###################
-startup!(dev)                 # PowerOn → StartInit → DisableCL → EnableCL → ReferenceZero
+startup!(dev)                 # PowerOn → StartInit → DisableCL → EnableCL
+                              # (ReferenceZero is NOT called here — see calibrate!)
 
-#### 2nd block to run ####
-calibrate!(dev)               # SimultaneousCalibration
+#ONCE AFTER UNPLUGGING THE BOARD BEFORE PERFORMING THE CALIBRATION< OTHERWISE IT"S REMEMBERED!!!!!
+#RefZero_run_only_once_after_unplugging_board!(dev)  # ReferenceZero → wait_for_idle
+
+#### 2nd block to run: Calibrate the 3 axis at the same time ####
+# After power cycle: always run calibrate! — it re-zeros encoder then descends to blocks.
+# After Julia restart (no power cycle): skip calibrate! if read_axis_status shows valid
+# calib positions — the encoder reference survived and EEPROM values are still correct.
+calibrate!(dev)               # SimultaneousCalibration → save to EEPROM
 
 #### 3rd block to run ####
 const MOVE_NSTEPS = 500_000   # microsteps above calibration block
 const DEFAULT_MAX_SPEED = 51_200
-#Run this without entering measuring mode ####################
+#Run this without entering measuring mode and to move the 3 axis####################
 move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
-#Run this entering measuring mode ####################
+#Run this entering measuring mode moving the 3 axis####################
 #const MOVE_NSTEPS = 600_000   # microsteps above calibration block
 #const DEFAULT_MAX_SPEED = 51_200
 #move_and_measure!(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED) #Calls move_all_axes_to and enter_measurement_mode
 #end_measurement!(dev)
+#Run this to move one axis at a time independently (ax: 0/1/2, position: absolute encoder usteps)
+#const MOVE_TO_POSITION = 100_000
+#move_absolute_axis_to(dev, 0, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 0
+#move_absolute_axis_to(dev, 1, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 1
+#move_absolute_axis_to(dev, 2, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 2
+
 
 #### 4th block : Power off and potentially stop code looping on tmcm board ####
 #shutdown!(dev)
@@ -61,3 +74,5 @@ move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 #query(dev, 15, 8, 1, 0)   # GIO command = 15, port 8, bank 1
 #board_status(dev)         # log supply voltage [V] and temperature [°C / K]
 #read_axis_status(dev)     # get axis status : calibration point and encoder positions for the 3 axis
+#read_closed_loop_status(dev)
+#check_program_looping(dev)   # sends end_program, waits 300ms, reports and returns true/false

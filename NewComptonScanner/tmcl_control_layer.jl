@@ -22,11 +22,14 @@ export connect_board,
        move_all_axes_to,
        move_absolute_axis_to,
        end_program,
+       check_program_looping,
        startup!,
        calibrate!,
        move_and_measure!,
        end_measurement!,
-       shutdown!
+       shutdown!,
+       read_closed_loop_status,
+       RefZero_run_only_once_after_unplugging_board!
 
 using TrinamicMotionControl
 import TrinamicMotionControl: query, set_axis_parameter, get_axis_parameter
@@ -217,6 +220,19 @@ exit_measurement_mode(dev)       = set_global_parameter(dev, GP_TMCM_COMMAND, 12
 move_axis_absolute(dev, ax::Int) = set_global_parameter(dev, GP_TMCM_COMMAND, 13 + ax)  # ax ∈ {0,1,2} → cmd ∈ {13,14,15}
 end_program(dev)                 = set_global_parameter(dev, GP_TMCM_COMMAND, 999)
 
+function check_program_looping(dev)
+    end_program(dev)
+    sleep(0.3)   # give the board time to acknowledge and clear GP10
+    val = get_global_parameter(dev, GP_TMCM_COMMAND)
+    if val == 999
+        @info "No TMCL program was looping — GP10 was not cleared."
+        return false
+    else
+        @info "A TMCL program was looping — GP10 was cleared to $val (program has now stopped)."
+        return true
+    end
+end
+
 # ============================================================
 # HIGH LEVEL COMMANDS
 # ============================================================
@@ -270,6 +286,15 @@ function read_axis_status(dev)
     return (calib_pos = calib, encoder_pos = enc)
 end
 
+function read_closed_loop_status(dev)
+    cl = ntuple(ax -> query(dev, 6, 129, ax - 1, 0) == 1, 3)
+    for (i, enabled) in enumerate(cl)
+        @info "  axis $(i-1) closed-loop: $(enabled ? "ENABLED" : "DISABLED")"
+    end
+    return (axis0 = cl[1], axis1 = cl[2], axis2 = cl[3])
+end
+
+
 """
 Move all 3 axes to `nsteps` microsteps above their respective calibration block positions.
 Reads calib positions from GP 53/54/55, computes per-axis absolute targets, writes to
@@ -314,10 +339,15 @@ function startup!(dev)
     @info "EnableClosedLoop — clean CL init before any move"
     enable_closed_loop(dev);   wait_for_idle(dev)
 
+    @info "Startup complete."
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+#This function should only be run after unplugging the board otherwise the 0 value is remembered
+# ─────────────────────────────────────────────────────────────────────────────
+function RefZero_run_only_once_after_unplugging_board!(dev)
     @info "ReferenceZero — set current sled positions as encoder origin"
     reference_zero(dev);       wait_for_idle(dev)
-
-    @info "Startup complete."
 end
 
 # ─────────────────────────────────────────────────────────────────────────────

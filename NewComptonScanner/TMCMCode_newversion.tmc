@@ -89,6 +89,21 @@ Max_Velocity_Deviation = 213
 SGP TMCM_Command, 2, 0  // Safety reset: ensure command register starts idle
 SGP 77, 0, 1            // Enable auto-start: run this program automatically after every power-up (stored in EEPROM)
 
+// Safety init: runs on every program start (power cycle AND red-button restart).
+// Disabling CL prevents the motor from driving to a stale AP0 target left over
+// from a mid-move emergency stop. Zeroing currents is safe because the lead-screw
+// spindles are self-locking — sleds hold position without motor current.
+// Julia's startup! (power_on) will re-apply currents and re-enable CL.
+SAP 129, 0, 0           // disable closed-loop axis 0
+SAP 129, 1, 0           // disable closed-loop axis 1
+SAP 129, 2, 0           // disable closed-loop axis 2
+SAP 6, 0, 0             // zero run current axis 0
+SAP 6, 1, 0             // zero run current axis 1
+SAP 6, 2, 0             // zero run current axis 2
+SAP 7, 0, 0             // zero standby current axis 0
+SAP 7, 1, 0             // zero standby current axis 1
+SAP 7, 2, 0             // zero standby current axis 2
+
 // ========================================================================
 // MAIN STATE MACHINE LOOP
 // ========================================================================
@@ -454,6 +469,7 @@ CalibAxis0Stop:
     JC NE, CalibAxis0Stop
     MST 0
     GAP 209,0
+    AAP 0,0                      // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS0,2        // CALIB_POS_AXIS0 = encoder pos at block
 
 SGP 10, 2, 0
@@ -473,6 +489,7 @@ CalibAxis1Stop:
     JC NE, CalibAxis1Stop
     MST 1
     GAP 209,1
+    AAP 0,1                      // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS1,2        // CALIB_POS_AXIS1 = encoder pos at block
 
 SGP 10, 2, 0
@@ -492,6 +509,7 @@ CalibAxis2Stop:
     JC NE, CalibAxis2Stop
     MST 2
     GAP 209,2
+    AAP 0,2                      // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS2,2        // CALIB_POS_AXIS2 = encoder pos at copper block
 
 SGP 10, 2, 0
@@ -729,9 +747,6 @@ MonitorAxis0Loop:
     GAP 8,0
     COMP 1
     JC EQ, DoneAxis0
-    GAP 3,0
-    COMP 0
-    JC EQ, EmergencyStop
     WAIT TICKS,0,1
     JA MonitorAxis0Loop
 DoneAxis0:
@@ -751,9 +766,6 @@ MonitorAxis1Loop:
     GAP 8,1
     COMP 1
     JC EQ, DoneAxis1
-    GAP 3,1
-    COMP 0
-    JC EQ, EmergencyStop
     WAIT TICKS,0,1
     JA MonitorAxis1Loop
 DoneAxis1:
@@ -773,9 +785,6 @@ MonitorAxis2Loop:
     GAP 8,2
     COMP 1
     JC EQ, DoneAxis2
-    GAP 3,2
-    COMP 0
-    JC EQ, EmergencyStop
     WAIT TICKS,0,1
     JA MonitorAxis2Loop
 DoneAxis2:
@@ -828,6 +837,7 @@ CalibSimLoop:
 
     MST 0
     GAP 209,0
+    AAP 0,0                 // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS0,2   // CALIB_POS_AXIS0 = encoder pos at block
     CALC LOAD,1
     AGP CALIB_DONE_AXIS0,2  // axis0Done = 1
@@ -844,6 +854,7 @@ CalibSimCheck1:
 
     MST 1
     GAP 209,1
+    AAP 0,1                 // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS1,2   // CALIB_POS_AXIS1 = encoder pos at block
     CALC LOAD,1
     AGP CALIB_DONE_AXIS1,2  // axis1Done = 1
@@ -860,6 +871,7 @@ CalibSimCheck2:
 
     MST 2
     GAP 209,2
+    AAP 0,2                 // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS2,2   // CALIB_POS_AXIS2 = encoder pos at block
     CALC LOAD,1
     AGP CALIB_DONE_AXIS2,2  // axis2Done = 1
