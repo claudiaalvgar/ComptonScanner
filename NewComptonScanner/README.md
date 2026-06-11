@@ -280,6 +280,26 @@ Julia writes these **before** sending the relevant command.
 
 **Memory types and what survives each power event:**
 
+**Hardware note — two separate power domains:**
+
+The TMCM-3351 has two independent power supplies:
+
+- **Motor supply** — the high-voltage/high-current rail that drives the motor coils
+  and encoder interfaces.  The red button cuts this rail.
+- **Logic supply** — the MCU, RAM, and USB interface.  When the board is connected
+  to a PC via USB, the bus provides ~5 V which is enough to keep the MCU alive even
+  when the motor supply is cut.
+
+This means a red-button press/unpress is **not a full power-off** — it is a
+partial-power state where the MCU and its RAM remain live while the motion hardware
+is dead.  A full unplug (or powering off the PC-side USB) is the only event that
+actually clears the MCU RAM.
+
+The small encoder drift observed after a red-button press (~1500 usteps) comes from
+the encoder interface losing its supply: when motor power returns the encoder may not
+resume at exactly the same count, and the sled can move fractionally when holding
+current drops to zero.
+
 The TMCM-3351 has two distinct memory spaces with different survival rules:
 
 - **Global Parameters (GP, Bank 2) — board RAM**, readable/writable via GGP/SGP.
@@ -291,8 +311,8 @@ The TMCM-3351 has two distinct memory spaces with different survival rules:
 
 - **Axis Parameters (AP) — axis-local RAM**, readable/writable via GAP/SAP.  AP values
   like closed-loop enable (AP 129), run/standby current (AP 6/7), and encoder position
-  (AP 209) **survive a red-button press/unpress** because the board MCU stays powered
-  and its RAM is not cleared.  They are lost only on a full unplug.
+  (AP 209) **survive a red-button press/unpress** because the MCU RAM never loses
+  power (USB keeps the logic supply alive).  They are lost only on a full unplug.
 
 **Why closed-loop is DISABLED after a red-button press/unpress** despite AP values
 surviving in RAM:
