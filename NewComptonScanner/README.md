@@ -207,166 +207,347 @@ should be used instead.
 # TMCMCode_newversion.tmc — Julia-driven state machine
 
 This script implements the same physical behaviour as `FullTest_CreatorMode.tmc` but
-runs as a persistent loop on the TMCM board, controlled by a Julia interface via the
-TMCL global parameter bank 2. Instead of uncommenting routines in Creator Mode, Julia
-writes a command number to **GP 10 (bank 2)** and reads it back as 0 when the task is done.
+runs as a **persistent loop** on the TMCM board, controlled by Julia via the TMCL
+global parameter bank 2.  Instead of uncommenting routines in Creator Mode, Julia
+writes a command number to **GP 10 (bank 2)** and reads it back as 0 when the task
+is done.  The program auto-starts after every power-on (SGP 77, Bank 0 = 1 stored in
+EEPROM).
+
+### Architecture
+
+```
+Julia                           Board (TMCMCode_newversion.tmc)
+─────                           ──────────────────────────────
+SGP 10, 2, N  ────────────────▶  GGP TMCM_Command, 2
+                                  COMP N  →  dispatch to routine
+                                  routine executes
+                                  SGP 10, 2, 0
+GGP 10 == 0   ◀─────────────────  (idle, ready for next command)
+```
+
+### Safety init on every program start
+
+On every program start — including after a red-button press/unpress — the firmware
+immediately executes before entering the main loop:
+
+```tmcl
+SAP 129, 0, 0   // disable closed-loop axis 0
+SAP 129, 1, 0   // disable closed-loop axis 1
+SAP 129, 2, 0   // disable closed-loop axis 2
+SAP 6, 0, 0     // zero run current axis 0  (and 1, 2)
+SAP 7, 0, 0     // zero standby current axis 0  (and 1, 2)
+```
+
+This guarantees all axes are de-energized and CL is disabled whenever the board
+restarts.  The self-locking lead-screw spindles hold the sled positions without
+motor current.  Julia's `startup!` re-applies currents and re-enables CL.
 
 ---
 
 ## State machine command register (GP 10, bank 2)
 
-Julia writes one of these values to GP 10 to trigger a routine. The board sets GP 10
-back to 0 when the routine completes. Julia must wait for GP 10 = 0 before sending
-the next command.
+Julia writes one of these values to GP 10 to trigger a routine.  The board sets
+GP 10 back to 0 when the routine completes.  Julia must wait for GP 10 = 0 before
+sending the next command (use `wait_for_idle(dev)`).
 
-| GP 10 | Command | Notes |
-|-------|---------|-------|
-| 0  | Idle / complete | Board is ready for next command |
-| 1  | PowerOn | Set motion params, sync encoder/target. Run once at startup. |
-| 2  | StartInit | Load closed-loop PID parameters. |
-| 3  | DisableClosedLoop | Wait for confirmed disable on all 3 axes. |
-| 4  | EnableClosedLoop | Wait for confirmed enable on all 3 axes. |
-| 5  | ReferenceZero | Set current sled positions as encoder origin (= 0). |
-| 6  | StartCalibrationAxis0 | Move axis 0 down to block, save position. |
-| 7  | StartCalibrationAxis1 | Move axis 1 down to block, save position. |
-| 8  | StartCalibrationAxis2 | Move axis 2 down to block, save position. |
-| 9  | StartMove | Move all 3 axes upward to `CALIB_POS - Target_Pos`. |
-| 10 | PowerOff | Stop motors, disable CL, zero currents. |
-| 11 | EnterMeasurementMode | Stop motors, zero currents, sync target. |
-| 12 | ExitMeasurementMode | Restore currents, re-sync target. |
-| 13 | MoveAxis0 | Move axis 0 to absolute encoder position in GP 0. |
-| 14 | MoveAxis1 | Move axis 1 to absolute encoder position in GP 0. |
-| 15 | MoveAxis2 | Move axis 2 to absolute encoder position in GP 0. |
-| 16 | SimultaneousCalibration | All 3 axes descend together; each MST'd and saved independently on stall. Returns GP10=0 when all 3 done. |
-| 99 | Error (EmergencyStop) | Set by board on hard stop. Board loops waiting for next Julia command. |
-| 999 | EndLoop | Stop the TMCL program. |
-
----
-
-## Data registers (bank 2)
-
-Julia writes these before sending the relevant command.
-
-| GP index | Name | Used by |
-|----------|------|---------|
-| 0  | Target_Pos | Offset above block in microsteps (command 9). Absolute target for commands 13/14/15. |
-| 4  | Max_Speed | Velocity for all moves (write before command 1 or 9). |
-| 53 | CALIB_POS_AXIS0 | Encoder position at block, axis 0 (written by commands 6 and 16). |
-| 54 | CALIB_POS_AXIS1 | Encoder position at block, axis 1 (written by commands 7 and 16). |
-| 55 | CALIB_POS_AXIS2 | Encoder position at block, axis 2 (written by commands 8 and 16). |
-| 56–58 | CALIB_DONE_AXIS0–2 | Temporary done flags used internally by command 16. Cleared on exit. |
+| GP 10 | Routine name | Julia function | Notes |
+|-------|-------------|---------------|-------|
+| 0 | Idle | — | Board is ready for the next command |
+| 1 | PowerOn | `power_on(dev)` | Write motion params (GP 4/5/6/7/17/210) to all axes via AAP; sync encoder→actual→target atomically on the board |
+| 2 | StartInit | `start_init(dev)` | Write all closed-loop PID params (GP 108–126/212/213) to all axes via AAP |
+| 3 | DisableClosedLoop | `disable_closed_loop(dev)` | SAP 129,x,0; polls AP 133 until confirmed disabled on all 3 axes |
+| 4 | EnableClosedLoop | `enable_closed_loop(dev)` | SAP 129,x,1; polls AP 133 until confirmed enabled on all 3 axes |
+| 5 | ReferenceZero | `reference_zero(dev)` | SAP 209,x,0 — zero encoder at current position; sync actual and target. **Only once after unplugging** |
+| 6 | CalibrateAxis0 | `calibrate_axis(dev, 0)` | Descend axis 0 to block; MST on stall; save encoder pos → GP 53 |
+| 7 | CalibrateAxis1 | `calibrate_axis(dev, 1)` | Descend axis 1 to block; MST on stall; save encoder pos → GP 54 |
+| 8 | CalibrateAxis2 | `calibrate_axis(dev, 2)` | Descend axis 2 to block; MST on stall; save encoder pos → GP 55 |
+| 9 | StartMove | `move_all_axes_to(dev, nsteps, speed)` | Move all 3 axes to pre-computed targets written by Julia to GP 59/60/61 |
+| 10 | PowerOff | `power_off(dev)` | MST all axes; disable CL; zero run and standby currents |
+| 11 | EnterMeasurementMode | `enter_measurement_mode(dev)` | MST all axes; sync target to encoder; zero currents — eliminates motor EMI |
+| 12 | ExitMeasurementMode | `exit_measurement_mode(dev)` | Re-sync target to encoder; restore currents (run=25, standby=8) |
+| 13 | MoveAxis0 | `move_absolute_axis_to(dev, 0, pos, speed)` | Move axis 0 to absolute encoder position written to GP 0 |
+| 14 | MoveAxis1 | `move_absolute_axis_to(dev, 1, pos, speed)` | Move axis 1 to absolute encoder position written to GP 0 |
+| 15 | MoveAxis2 | `move_absolute_axis_to(dev, 2, pos, speed)` | Move axis 2 to absolute encoder position written to GP 0 |
+| 16 | SimultaneousCalibration | `calibrate!(dev)` | All 3 axes descend together in a round-robin poll loop; each is MST'd and saved independently on stall; GP10=0 when all 3 done |
+| 99 | Error / EmergencyStop | — | Set by board on hard stop; waits for next Julia command |
+| 999 | EndLoop | `end_program(dev)` | MST all axes; STOP — terminates the TMCL program |
 
 ---
 
-## Normal startup sequence (equivalent to Step 1 in FullTest)
+## GP Bank 2 data registers
 
-```
-SGP 10, 2, 1   # PowerOn      → wait GP10 = 0
-SGP 10, 2, 2   # StartInit    → wait GP10 = 0
-SGP 10, 2, 3   # DisableCL    → wait GP10 = 0
-SGP 10, 2, 4   # EnableCL     → wait GP10 = 0
-SGP 10, 2, 5   # ReferenceZero → wait GP10 = 0
-```
+Julia writes these **before** sending the relevant command.  Registers 0–55 are
+EEPROM-restorable — `calibrate!` explicitly saves GP 53/54/55 to EEPROM (STGP
+opcode 11) so calibration positions survive a power cycle.
 
-## Calibration + move (equivalent to Steps 2B + 3B in FullTest)
+| GP index | Julia constant | Written by | Read by |
+|----------|---------------|-----------|--------|
+| 0 | `GP_TARGET_POS` | Julia | MoveAxis0/1/2 (absolute encoder target) |
+| 4 | `GP_MAX_SPEED` | Julia | PowerOn, StartMove, MoveAxis0/1/2, SimultaneousCalibration |
+| 5 | `GP_MAX_ACCELERATION` | Julia | PowerOn |
+| 6 | `GP_MAX_CURRENT` | Julia | PowerOn |
+| 7 | `GP_STANDBY_CURRENT` | Julia | PowerOn |
+| 10 | `GP_TMCM_COMMAND` | Julia (trigger) / board (clear to 0) | Main dispatch loop |
+| 17 | `GP_MAX_DECELERATION` | Julia | PowerOn |
+| 53 | `GP_CALIB_POS_AXIS0` | Board (calibration routines) | StartMove, `move_all_axes_to` |
+| 54 | `GP_CALIB_POS_AXIS1` | Board (calibration routines) | StartMove, `move_all_axes_to` |
+| 55 | `GP_CALIB_POS_AXIS2` | Board (calibration routines) | StartMove, `move_all_axes_to` |
+| 56–58 | `GP_CALIB_DONE_AXIS0–2` | Board (internal) | SimultaneousCalibration done flags; cleared on exit |
+| 59–61 | `GP_MOVE_TARGET_AXIS0–2` | Julia | StartMove (absolute targets = `calib_pos − offset`) |
+| 108–126 | CL PID parameters | Julia | StartInit |
+| 210 | `GP_ENCODER_RESOLUTION` | Julia | PowerOn |
+| 212–213 | `GP_MAX_ENCODER/VELOCITY_DEVIATION` | Julia | StartInit |
 
-```
-SGP 10, 2, 16  # SimultaneousCalibration → wait GP10 = 0
-SGP 10, 2, 9   # StartMove              → wait GP10 = 0
-```
-
-Or calibrate one axis at a time:
-```
-SGP 10, 2, 6   # axis 0 → wait GP10 = 0
-SGP 10, 2, 7   # axis 1 → wait GP10 = 0
-SGP 10, 2, 8   # axis 2 → wait GP10 = 0
-SGP 10, 2, 9   # StartMove → wait GP10 = 0
-```
-
-## Hard stop recovery
-
-If a hard stop occurs during StartMove (command 9), the board sets GP10 = 99 and
-waits. Julia detects GP10 = 99 and can immediately send command 16 or 6/7/8 to
-re-calibrate — no Step 1 needed as long as the board has not been power-cycled.
+---
 
 ## Behaviour equivalence with FullTest_CreatorMode.tmc
 
-Both scripts implement identical physical routines. The only difference is how they
-are driven: FullTest requires manual uncomment/run in Creator Mode per step; this
-script runs autonomously and accepts commands from Julia over the GP register
-interface. The calibration logic (simultaneous 3-axis descent with per-axis
-independent monitoring, immediate MST on stall) is identical.
+Both scripts implement identical physical routines.  The difference is the driving
+mechanism: FullTest requires manual uncomment/run in Creator Mode per step;
+TMCMCode_newversion runs autonomously and accepts commands over the GP register
+interface.  The calibration logic (simultaneous 3-axis descent, round-robin poll,
+immediate MST on stall) is identical.
 
----
-
-## Julia interface — tmcl_control_layer.jl
-
-`tmcl_control_layer.jl` wraps `TrinamicMotionControl.jl` to expose the state machine
-commands as plain Julia functions. It uses two TMCL opcodes internally:
-
-| TMCL opcode | Julia call | Direction |
-|---|---|---|
-| SGP (9) | `set_global_parameter(dev, gp, value)` | Julia → board |
-| GGP (10) | `get_global_parameter(dev, gp)` | board → Julia |
-
-`wait_for_idle(dev)` polls GP 10 every 100 ms until the board writes it back to 0.
-Always call it after every command — the board is still executing while GP 10 ≠ 0.
-
-### CSUB → Julia translation
-
-Each `CSUB` line in `FullTest_CreatorMode.tmc` maps directly to one Julia function call:
-
-| `FullTest_CreatorMode.tmc` | Julia | GP 10 sent |
-|---|---|---|
+| `FullTest_CreatorMode.tmc` CSUB | Julia function | GP 10 |
+|----------------------------------|---------------|-------|
 | `CSUB PowerOn` | `power_on(dev)` | 1 |
 | `CSUB StartInit` | `start_init(dev)` | 2 |
 | `CSUB DisableClosedLoop` | `disable_closed_loop(dev)` | 3 |
 | `CSUB EnableClosedLoop` | `enable_closed_loop(dev)` | 4 |
 | `CSUB ReferenceZero` | `reference_zero(dev)` | 5 |
 | `CSUB StartCalibrationSimultaneousAxis` | `calibrate_simultaneous(dev)` | 16 |
-| `CSUB StartMove2` | `move_to(dev, 500000, 51200)` | 9 (writes GP0, GP4 first) |
+| `CSUB StartMove2` (−500,000) | `move_all_axes_to(dev, 500_000, 51_200)` | 9 |
 | `CSUB EnterMeasurementMode` | `enter_measurement_mode(dev)` | 11 |
 | `CSUB ExitMeasurementMode` | `exit_measurement_mode(dev)` | 12 |
 | `CSUB PowerOff` | `power_off(dev)` | 10 |
 
-**Key difference from `StartMove2`:** `StartMove2` hardcodes −500,000 as the upward
-offset. The Julia `move_to(dev, position, speed)` writes `position` to GP 0 before
-triggering StartMove (command 9), so the offset is a parameter. `move_to(dev, 500000, 51200)`
-is exactly equivalent to `CSUB StartMove2`.
+`StartMove2` hardcodes −500,000.  `move_all_axes_to(dev, nsteps, speed)` is
+parameterized: Julia reads GP 53/54/55, computes per-axis absolute targets
+(`calib_pos − nsteps`), writes them to GP 59/60/61, and triggers command 9.
 
-### Single-axis absolute moves (no Creator Mode equivalent)
+---
 
-To re-level one axis independently, write the absolute encoder target to GP 0 and
-call `move_axis_to(dev, axis, position, speed)` (triggers commands 13/14/15).
+## Julia interface — tmcl_control_layer.jl
 
-### Complete measurement sequence
+`tmcl_control_layer.jl` wraps `TrinamicMotionControl.jl` and exposes every board
+routine as a named Julia function.  Two TMCL opcodes are used:
 
-See `ScanSequence.jl` for a ready-to-run script. The sequence is:
+| TMCL opcode | Julia call | Direction |
+|-------------|-----------|----------|
+| SGP (9) | `set_global_parameter(dev, gp, value)` | Julia → board |
+| GGP (10) | `get_global_parameter(dev, gp)` | board → Julia |
+
+`wait_for_idle(dev)` polls GP 10 every 100 ms until the board clears it to 0
+(timeout 60 s).  **Always call it after every command** — the board is still
+executing its routine while GP 10 ≠ 0.
+
+### High-level composite functions
+
+| Function | Sequence | Notes |
+|----------|---------|-------|
+| `startup!(dev)` | `power_on` → `start_init` → `disable_closed_loop` → `enable_closed_loop` | Once per power-cycle, before calibration. Sleds must be physically above the calibration blocks. |
+| `calibrate!(dev)` | `calibrate_simultaneous` → STGP 53/54/55 to EEPROM | Can be re-run as many times as needed within a session. |
+| `move_and_measure!(dev, nsteps, speed)` | `move_all_axes_to` → `enter_measurement_mode` | Move to scan position and de-energize motors. |
+| `end_measurement!(dev)` | SAP current restore → `exit_measurement_mode` | Restore currents via SAP (more reliable than AAP/GGP with CL active). |
+| `shutdown!(dev)` | `power_off` | Clean pre-power-off: MST, disable CL, zero currents. |
+| `RefZero_run_only_once_after_unplugging_board!(dev)` | `reference_zero` | **Only after unplugging the board** — zeros encoder at current sled positions. |
+
+### Diagnostic functions
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `read_axis_status(dev)` | `(calib_pos, encoder_pos)` | Logs GP 53/54/55 (calibration block positions) and AP 209 (current encoder positions) for all 3 axes. After a successful `calibrate!`, these two sets of values should be identical. |
+| `read_closed_loop_status(dev)` | `(axis0, axis1, axis2)` Booleans | Logs ENABLED/DISABLED for each axis (AP 129). |
+| `board_status(dev)` | named tuple | Logs supply voltage [V], temperature [°C/K], run current, standby current. |
+| `check_program_looping(dev)` | `Bool` | Sends `end_program`, waits 300 ms, checks if GP 10 was cleared. Returns `true` if a TMCL program was looping. |
+
+---
+
+## Startup scenarios
+
+### Scenario A — Board unplugged / full power cycle (`After_UnplugBoard.jl`)
+
+Everything is lost: the TMCL program is gone, encoder zero reference is gone,
+calibration positions are gone.  **Sleds must be above the calibration blocks
+before running this.**
 
 ```julia
-# ── startup (once per power-cycle) ───────────────────────────────────
-power_on(dev);             wait_for_idle(dev)
-start_init(dev);           wait_for_idle(dev)
-disable_closed_loop(dev);  wait_for_idle(dev)
-enable_closed_loop(dev);   wait_for_idle(dev)
-reference_zero(dev);       wait_for_idle(dev)   # sleds must be above blocks
+# 1. Load TMCMCode_newversion.tmc onto the board via TMCL-IDE (Creator Mode → upload)
 
-# ── calibrate + move to first position ───────────────────────────────
-calibrate_simultaneous(dev);        wait_for_idle(dev)
-move_to(dev, 500_000, 51_200);      wait_for_idle(dev)
+# 2. Run After_UnplugBoard.jl
+dev = connect_board("gelab-serial01", 2001)
+sleep(2.0)
 
-# ── scan loop ─────────────────────────────────────────────────────────
-for offset in scan_points
-    move_to(dev, offset, 51_200);       wait_for_idle(dev)
-    enter_measurement_mode(dev);        wait_for_idle(dev)
-    # ... acquire data ...
-    exit_measurement_mode(dev);         wait_for_idle(dev)
-end
+# Verify state: random values expected, CL must be DISABLED
+read_axis_status(dev)
+read_closed_loop_status(dev)    # → DISABLED (firmware disabled on startup)
 
-power_off(dev); wait_for_idle(dev)
+startup!(dev)                   # PowerOn → StartInit → DisableCL → EnableCL
+
+# Set the encoder zero at the current sled positions — ONCE ONLY after unplugging
+RefZero_run_only_once_after_unplugging_board!(dev)
+
+read_closed_loop_status(dev)    # → ENABLED
+
+calibrate!(dev)                 # all 3 axes descend → stall → positions saved to EEPROM
+
+move_all_axes_to(dev, 500_000, 51_200); wait_for_idle(dev)
 ```
 
-`reference_zero` must be called **before** calibration (while sleds are above the
-blocks) and must never be called again after `calibrate_simultaneous`. The calibration
-positions (GP 53/54/55) remain valid for any subsequent `move_to` calls without
-re-calibrating, as long as the board is not power-cycled.
+**Why `RefZero` must only be called once after unplugging:**
+`ReferenceZero` (GP 10 = 5) resets the encoder to 0 at the current sled positions
+and syncs actual and target registers — giving the CL controller a clean zero
+reference.  Calling it again after calibration would reset the origin to the block
+positions, corrupting the coordinate system and breaking hard-stop detection.
+
+---
+
+### Scenario B — Red button pressed and unpressed (`AfterRedButton_CodeLooping.jl`)
+
+The TMCL program was already loaded and is looping.  After unpressing the red button
+the firmware auto-restarts, disables CL, and zeros currents.  The encoder zero
+reference and calibration positions (GP 53/54/55) survive in EEPROM.
+
+**Verified measured behavior:**
+
+| State | axis 0 calib (usteps) | axis 1 calib | axis 2 calib | Closed loop |
+|-------|-----------------------|--------------|--------------|-------------|
+| Before red button | 293964 | 326093 | 299489 | ENABLED |
+| After unpress (firmware restarted) | 293964 | 326093 | 299489 | **DISABLED** |
+| After `startup!` | 293964 | 326093 | 299489 | **ENABLED** |
+| After `calibrate!` | 292966 | 326093 | 300262 | ENABLED |
+
+Encoder positions drift slightly (~1500 usteps ≈ 0.15 mm) while CL is inactive
+during the red-button period — this is normal.  After `calibrate!`, encoder positions
+match calibration positions exactly.
+
+```julia
+dev = connect_board("gelab-serial01", 2001)
+sleep(2.0)
+
+# Calib positions should still be present; encoder may have drifted; CL is DISABLED
+read_axis_status(dev)
+read_closed_loop_status(dev)
+
+startup!(dev)                   # PowerOn → StartInit → DisableCL → EnableCL
+                                # DO NOT call RefZero — encoder zero reference is still valid
+
+read_axis_status(dev)
+read_closed_loop_status(dev)    # → ENABLED
+
+# Recalibrate (safe to run as many times as needed)
+calibrate!(dev)
+
+# or skip recalibration if read_axis_status shows calib_pos == encoder_pos
+
+move_all_axes_to(dev, 500_000, 51_200); wait_for_idle(dev)
+```
+
+---
+
+### Scenario C — Normal session, clean startup (`ScanSequence.jl`)
+
+Board was powered off cleanly (`shutdown!` + `end_program`).  TMCL code is loaded
+and looping.  Calibration positions in EEPROM are valid.
+
+```julia
+dev = connect_board("gelab-serial01", 2001)
+sleep(2.0)                      # let board reach MainLoop before sending commands
+
+startup!(dev)                   # PowerOn → StartInit → DisableCL → EnableCL
+calibrate!(dev)                 # simultaneous 3-axis calibration → EEPROM
+
+const MOVE_NSTEPS     = 500_000  # microsteps above calibration block
+const DEFAULT_MAX_SPEED = 51_200  # usteps/s
+
+move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
+
+# Optional: de-energize motors for low-noise HPGe data acquisition
+# move_and_measure!(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED)   # move + enter measurement mode
+# ... acquire data ...
+# end_measurement!(dev)                                     # restore currents
+
+# Optional: move a single axis to an absolute encoder position (re-leveling)
+# move_absolute_axis_to(dev, 0, 100_000, DEFAULT_MAX_SPEED); wait_for_idle(dev)
+
+shutdown!(dev)      # MST all, disable CL, zero currents
+end_program(dev)    # stop the TMCL loop on the board
+```
+
+---
+
+## Calibration and encoder zero — key rules
+
+1. **`ReferenceZero` is only called once after unplugging the board**, while sleds are
+   above the blocks.  It sets encoder = 0 at the current sled positions.  After this,
+   the zero reference is valid for the lifetime of the power-on session.
+
+2. **`calibrate!` can be re-run as many times as needed** within a session.
+   It descends all 3 axes simultaneously to their mechanical stops, saves encoder
+   positions at each stop to GP 53/54/55, and writes them to EEPROM.
+
+3. **After `calibrate!`, `calib_pos == encoder_pos` exactly.**
+   `read_axis_status` showing identical values for both columns confirms a clean calibration.
+
+4. **Calibration positions survive a red-button press/unpress** (EEPROM-backed).
+   They do **not** survive unplugging the board (encoder zero reference is lost).
+
+5. **Never call `reference_zero` after calibration.**  The CL controller's internal
+   commutation state would no longer match the new encoder = 0 reference, causing
+   incorrect hard-stop detection and erratic motion.
+
+---
+
+## Measurement mode — EnterMeasurementMode / ExitMeasurementMode
+
+`EnterMeasurementMode` (command 11) de-energizes all motors for low-noise HPGe acquisition:
+1. MST all axes; polls `GAP 3` (actual velocity) until each axis confirms zero.
+2. Waits 50 ticks for mechanical settling.
+3. Syncs target (`AAP 0`) to current encoder (`GAP 209`) — prevents the CL controller
+   from fighting to return to the old move target when current is restored.
+4. Sets run current (`SAP 6`) and standby current (`SAP 7`) to 0 — stops all PWM
+   switching, eliminating motor EMI during measurement.
+5. Waits 100 ticks for electrical settling before measurement begins.
+
+`ExitMeasurementMode` (command 12) restores the motion system:
+1. Re-syncs target to current encoder position (accounts for any sled drift during
+   measurement) — prevents jerk on restore.
+2. Restores run current = 25 and standby current = 8.
+3. Waits 50 ticks for CL to stabilise.
+
+Note: `end_measurement!` in Julia uses SAP (direct axis parameter write) rather than
+AAP/GGP to restore currents, because AAP/GGP is unreliable with CL active.
+
+---
+
+## Clean shutdown procedure
+
+Before pressing the red button to power off, always run:
+
+```julia
+shutdown!(dev)      # MST all axes, disable CL, zero currents
+end_program(dev)    # stop the TMCL loop on the board
+```
+
+If `shutdown!` is skipped, the next startup still works correctly because the firmware
+disables CL and zeros currents on every program start.  Calling `shutdown!` first is
+still best practice — it leaves the board in a known idle state and avoids the CL
+controller being active at the moment of power loss.
+
+---
+
+## Default motion parameters
+
+| Julia constant | Default value | Units | AP / GP |
+|---------------|--------------|-------|--------|
+| `DEFAULT_MAX_SPEED` | 51,200 | usteps/s | AP 4 / GP 4 |
+| `DEFAULT_MAX_ACCELERATION` | 51,200 | usteps/s² | AP 5 / GP 5 |
+| `DEFAULT_MAX_DECELERATION` | 51,200 | usteps/s² | AP 17 / GP 17 |
+| `DEFAULT_MAX_CURRENT` | 25 | % of max | AP 6 / GP 6 |
+| `DEFAULT_STANDBY_CURRENT` | 8 | % of max | AP 7 / GP 7 |
+| `DEFAULT_ENCODER_RESOLUTION` | 2000 | counts/rev | AP 210 / GP 210 |
+
+Scale: 1 motor turn = 5 mm = 51,200 microsteps → **1 ustep ≈ 0.097 µm**
+
+All defaults can be overridden via keyword arguments to `power_on(dev; ...)` and
+`start_init(dev; ...)`.
