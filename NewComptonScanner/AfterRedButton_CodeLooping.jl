@@ -27,7 +27,7 @@ startup!(dev)                # Re enables closed loop that is disabled after unp
 read_axis_status(dev)
 read_closed_loop_status(dev)
 
-# We can calibrate again if needed: 
+# We can calibrate again if needed, recommended since diabling and enabling the closed loop moves a bit the sleds and the encoder positions
 calibrate!(dev) 
 
 #or just start moving the 3 axis simultaneously

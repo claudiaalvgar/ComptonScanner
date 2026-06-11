@@ -261,13 +261,13 @@ sending the next command (use `wait_for_idle(dev)`).
 | 6 | CalibrateAxis0 | `calibrate_axis(dev, 0)` | Descend axis 0 to block; MST on stall; save encoder pos → GP 53 |
 | 7 | CalibrateAxis1 | `calibrate_axis(dev, 1)` | Descend axis 1 to block; MST on stall; save encoder pos → GP 54 |
 | 8 | CalibrateAxis2 | `calibrate_axis(dev, 2)` | Descend axis 2 to block; MST on stall; save encoder pos → GP 55 |
-| 9 | StartMove | `move_all_axes_to(dev, nsteps, speed)` | Move all 3 axes to pre-computed targets written by Julia to GP 59/60/61 |
+| 9 | StartMove | `move_all_axes_to(dev, nsteps, speed)` | Move all 3 axes to `nsteps` microsteps **above the calibration block** (Julia reads GP 53/54/55, computes `calib_pos − nsteps`, writes absolute targets to GP 59/60/61) |
 | 10 | PowerOff | `power_off(dev)` | MST all axes; disable CL; zero run and standby currents |
 | 11 | EnterMeasurementMode | `enter_measurement_mode(dev)` | MST all axes; sync target to encoder; zero currents — eliminates motor EMI |
 | 12 | ExitMeasurementMode | `exit_measurement_mode(dev)` | Re-sync target to encoder; restore currents (run=25, standby=8) |
-| 13 | MoveAxis0 | `move_absolute_axis_to(dev, 0, pos, speed)` | Move axis 0 to absolute encoder position written to GP 0 |
-| 14 | MoveAxis1 | `move_absolute_axis_to(dev, 1, pos, speed)` | Move axis 1 to absolute encoder position written to GP 0 |
-| 15 | MoveAxis2 | `move_absolute_axis_to(dev, 2, pos, speed)` | Move axis 2 to absolute encoder position written to GP 0 |
+| 13 | MoveAxis0 | `move_absolute_axis_to(dev, 0, pos, speed)` | Move axis 0 to `pos` microsteps above the **encoder zero set by `ReferenceZero`** (positive = down, negative = up relative to that origin) |
+| 14 | MoveAxis1 | `move_absolute_axis_to(dev, 1, pos, speed)` | Move axis 1 to `pos` microsteps above the **encoder zero set by `ReferenceZero`** |
+| 15 | MoveAxis2 | `move_absolute_axis_to(dev, 2, pos, speed)` | Move axis 2 to `pos` microsteps above the **encoder zero set by `ReferenceZero`** |
 | 16 | SimultaneousCalibration | `calibrate!(dev)` | All 3 axes descend together in a round-robin poll loop; each is MST'd and saved independently on stall; GP10=0 when all 3 done |
 | 99 | Error / EmergencyStop | — | Set by board on hard stop; waits for next Julia command |
 | 999 | EndLoop | `end_program(dev)` | MST all axes; STOP — terminates the TMCL program |
