@@ -20,13 +20,16 @@ export connect_board,
        exit_measurement_mode,
        move_axis_absolute,
        move_all_axes_to,
+       move_all_axes_to_mm,
        move_absolute_axis_to,
        move_axis_above_calib,
+       move_axis_above_calib_mm,
        end_program,
        is_program_running,
        startup!,
        calibrate!,
        move_and_measure!,
+       move_and_measure_mm!,
        end_measurement!,
        shutdown!,
        read_closed_loop_status,
@@ -95,6 +98,9 @@ const GP_MAX_VELOCITY_DEVIATION         = 213
 # ── Default parameter values ──────────────────────────────────────────────────
 # Match the SGP static-init values in the TMC scripts.
 # Override via keyword arguments on power_on / start_init.
+# 1 motor revolution = 5 mm = 51,200 microsteps → 10,240 usteps/mm
+const USTEPS_PER_MM = 10_240
+
 const DEFAULT_ENCODER_RESOLUTION             = 2000
 const DEFAULT_MAX_SPEED                      = 51_200
 const DEFAULT_MAX_ACCELERATION               = 51_200
@@ -356,6 +362,35 @@ function move_axis_above_calib(dev, ax::Int, nsteps::Int, speed::Int)
     set_global_parameter(dev, gp_target, calib - nsteps)
     set_global_parameter(dev, GP_MAX_SPEED, speed)
     set_global_parameter(dev, GP_TMCM_COMMAND, 17 + ax)   # 17/18/19 → MoveAxis0/1/2AboveCalib
+end
+
+"""
+Move all 3 axes to `distance_mm` millimetres above their respective calibration
+block positions.  `speed_mm_s` is the motion speed in mm/s.
+Converts to microsteps internally using USTEPS_PER_MM (10,240 usteps/mm).
+"""
+function move_all_axes_to_mm(dev, distance_mm::Real, speed_mm_s::Real)
+    move_all_axes_to(dev, round(Int, distance_mm * USTEPS_PER_MM),
+                          round(Int, speed_mm_s  * USTEPS_PER_MM))
+end
+
+"""
+Move a single axis to `distance_mm` millimetres above its calibration block position.
+`speed_mm_s` is the motion speed in mm/s.  ax ∈ {0,1,2}.
+Converts to microsteps internally using USTEPS_PER_MM (10,240 usteps/mm).
+"""
+function move_axis_above_calib_mm(dev, ax::Int, distance_mm::Real, speed_mm_s::Real)
+    move_axis_above_calib(dev, ax, round(Int, distance_mm * USTEPS_PER_MM),
+                                   round(Int, speed_mm_s  * USTEPS_PER_MM))
+end
+
+"""
+Move all 3 axes to `distance_mm` millimetres above calibration blocks, then enter
+measurement mode (de-energize motors).  `speed_mm_s` is the motion speed in mm/s.
+"""
+function move_and_measure_mm!(dev, distance_mm::Real, speed_mm_s::Real)
+    move_and_measure!(dev, round(Int, distance_mm * USTEPS_PER_MM),
+                           round(Int, speed_mm_s  * USTEPS_PER_MM))
 end
 
 # ─────────────────────────────────────────────────────────────────────────────

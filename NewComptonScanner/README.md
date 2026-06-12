@@ -453,10 +453,13 @@ executing its routine while GP 10 ≠ 0.
 |----------|---------|-------|
 | `startup!(dev)` | `power_on` → `start_init` → `disable_closed_loop` → `enable_closed_loop` | Once per power-cycle, before calibration. Sleds must be physically above the calibration blocks. |
 | `calibrate!(dev)` | `calibrate_simultaneous` → STGP 53/54/55 to EEPROM | Can be re-run as many times as needed within a session. |
-| `move_all_axes_to(dev, nsteps, speed)` | reads GP 53/54/55 → writes GP 59/60/61 → cmd 9 | Move all 3 axes simultaneously to `nsteps` above their calibration blocks. Hard stop on any axis stops all three (see below). |
-| `move_axis_above_calib(dev, ax, nsteps, speed)` | reads GP 53+ax → writes GP 59+ax → cmd 17/18/19 | Move a single axis (`ax` ∈ {0,1,2}) to `nsteps` above its calibration block. Requires a prior `calibrate!`. |
-| `move_absolute_axis_to(dev, ax, pos, speed)` | writes GP 0 → cmd 13/14/15 | Move a single axis to an absolute encoder position. |
-| `move_and_measure!(dev, nsteps, speed)` | `move_all_axes_to` → `enter_measurement_mode` | Move to scan position and de-energize motors. |
+| `move_all_axes_to(dev, nsteps, speed)` | reads GP 53/54/55 → writes GP 59/60/61 → cmd 9 | Move all 3 axes simultaneously to `nsteps` microsteps above their calibration blocks. Hard stop on any axis stops all three (see below). |
+| `move_all_axes_to_mm(dev, dist_mm, speed_mm_s)` | converts to usteps → `move_all_axes_to` | Same as above with distance in mm and speed in mm/s. Conversion: 10,240 usteps/mm (5 mm/rev, 51,200 usteps/rev). |
+| `move_axis_above_calib(dev, ax, nsteps, speed)` | reads GP 53+ax → writes GP 59+ax → cmd 17/18/19 | Move a single axis (`ax` ∈ {0,1,2}) to `nsteps` microsteps above its calibration block. Requires a prior `calibrate!`. |
+| `move_axis_above_calib_mm(dev, ax, dist_mm, speed_mm_s)` | converts to usteps → `move_axis_above_calib` | Same as above with distance in mm and speed in mm/s. |
+| `move_absolute_axis_to(dev, ax, pos, speed)` | writes GP 0 → cmd 13/14/15 | Move a single axis to an absolute encoder position (microsteps). |
+| `move_and_measure!(dev, nsteps, speed)` | `move_all_axes_to` → `enter_measurement_mode` | Move to scan position (microsteps) and de-energize motors. |
+| `move_and_measure_mm!(dev, dist_mm, speed_mm_s)` | converts to usteps → `move_and_measure!` | Same as above with distance in mm and speed in mm/s. |
 | `end_measurement!(dev)` | SAP current restore → `exit_measurement_mode` | Restore currents via SAP (more reliable than AAP/GGP with CL active). |
 | `shutdown!(dev)` | `power_off` | Clean pre-power-off: MST, disable CL, zero currents. |
 | `RefZero_run_only_once_after_unplugging_board!(dev)` | `reference_zero` | **Only after full power loss** (board unplugged, or red button pressed with USB also disconnected) — zeros encoder at current sled positions. Not needed after a red-button press/unpress with USB still connected, because the encoder positions survive in MCU RAM. |
@@ -775,6 +778,9 @@ controller being active at the moment of power loss.
 | `DEFAULT_ENCODER_RESOLUTION` | 2000 | counts/rev | AP 210 / GP 210 |
 
 Scale: 1 motor turn = 5 mm = 51,200 microsteps → **1 ustep ≈ 0.097 µm**
+
+`USTEPS_PER_MM = 10,240` — used by the `_mm` function variants to convert distances
+and speeds: `DEFAULT_MAX_SPEED` of 51,200 usteps/s = **5 mm/s**.
 
 All defaults can be overridden via keyword arguments to `power_on(dev; ...)` and
 `start_init(dev; ...)`.
