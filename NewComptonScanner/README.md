@@ -683,6 +683,66 @@ again at any point after `exit_measurement_mode` without any additional steps.
 
 ---
 
+## Red button and hard stop — end-to-end verification
+
+Full test `TMCMCode_newversion.tmc` loaded via TMCL-IDE:
+
+**Red button test (USB connected throughout):**
+
+| State | calib ax0 | calib ax1 | calib ax2 | encoder ax0 | encoder ax1 | encoder ax2 | CL |
+|-------|-----------|-----------|-----------|-------------|-------------|-------------|----|
+| Before red button (code looping, sleds up) | 292563 | 326073 | 300237 | −207405 | −173921 | −199756 | ENABLED |
+| After press + unpress | 292563 | 326073 | 300237 | −207405 | −173895 | −199244 | **DISABLED** |
+| After `startup!` | 292563 | 326073 | 300237 | −207277 | −173741 | −198891 | **ENABLED** |
+| After `calibrate!` | 292819 | 326074 | 300335 | 292819 | 326074 | 300335 | ENABLED |
+
+Drift after red button plus startup (this is due to disabling and enabling closed loop in startup! routine): ~500 usteps (≈ 0.05 mm).
+
+**Shutdown verification:** `shutdown!` zeroed run and standby currents (AP 6/7 = 0, confirmed via `board_status`). `end_program` stopped the TMCL loop; `is_program_running` returned `false`.
+
+---
+
+### Julia-driven hard stop test — `move_all_axes_to`, 600,000-step target, 2 consecutive hard stops
+
+Setup: `TMCMCode_newversion.tmc`, `startup!` → `calibrate!`, then `move_all_axes_to(dev, 600_000, 51_200)`.
+Hard stop triggered manually on axis 2 (mid-move), twice, then movement resumed to completion.
+
+Calibration block positions: ax0 = 292,614 · ax1 = 326,073 · ax2 = 300,243
+
+**After 1st hard stop (axis 2 stopped mid-move):**
+
+| Sled | Encoder pos | Steps moved above calib |
+|------|-------------|------------------------|
+| 0    | 89,580      | 292,614 − 89,580 = **203,034** |
+| 1    | 123,014     | 326,073 − 123,014 = **203,059** |
+| 2    | 100,077     | 300,243 − 100,077 = **200,166** |
+
+Sled deviation: 203,059 − 200,166 = **2,893 usteps = 0.28 mm**
+
+**After 2nd hard stop (axis 2 stopped again, movement resumed after 1st stop):**
+
+| Sled | Encoder pos | Steps moved above calib |
+|------|-------------|------------------------|
+| 0    | −56,954     | 292,614 + 56,954 = **349,568** |
+| 1    | −23,546     | 326,073 + 23,546 = **349,619** |
+| 2    | −43,437     | 300,243 + 43,437 = **343,680** |
+
+Sled deviation (accumulated, 2 stops): 349,619 − 343,680 = **5,939 usteps = 0.58 mm**
+
+**After completing movement to 600,000 steps above calib:**
+
+| Sled | Encoder pos | Steps moved above calib |
+|------|-------------|------------------------|
+| 0    | −307,374    | 292,614 + 307,374 = **599,988** |
+| 1    | −273,940    | 326,073 + 273,940 = **600,013** |
+| 2    | −299,795    | 300,243 + 299,795 = **600,038** |
+
+Sled deviation after completion: 600,038 − 599,988 = **50 usteps = 0.005 mm**
+
+**Key result:** The accumulated sled misalignment from 2 hard stops (5,939 usteps / 0.58 mm) disappears almost entirely once the movement completes normally to the programmed target. Final inter-sled deviation is 50 usteps (0.005 mm) — two orders of magnitude smaller than the mid-stop deviation.
+
+---
+
 ## Clean shutdown procedure
 
 Before pressing the red button to power off, always run:
