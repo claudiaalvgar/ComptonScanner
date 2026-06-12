@@ -281,7 +281,7 @@ sending the next command (use `wait_for_idle(dev)`).
 | 6 | CalibrateAxis0 | `calibrate_axis(dev, 0)` | Descend axis 0 to block; MST on stall; save encoder pos → GP 53 |
 | 7 | CalibrateAxis1 | `calibrate_axis(dev, 1)` | Descend axis 1 to block; MST on stall; save encoder pos → GP 54 |
 | 8 | CalibrateAxis2 | `calibrate_axis(dev, 2)` | Descend axis 2 to block; MST on stall; save encoder pos → GP 55 |
-| 9 | StartMove | `move_all_axes_to(dev, nsteps, speed)` | Move all 3 axes to `nsteps` microsteps **above the calibration block** (Julia reads GP 53/54/55, computes `calib_pos − nsteps`, writes absolute targets to GP 59/60/61) |
+| 9 | StartMove | `move_all_axes_to(dev, nsteps, speed)` | Move all 3 axes to `nsteps` microsteps **above the calibration block** (Julia reads GP 53/54/55, computes `calib_pos − nsteps`, writes absolute targets to GP 59/60/61). Hard stop on any axis stops all three — see [Hard stop detection](#hard-stop-detection-in-startmove) |
 | 10 | PowerOff | `power_off(dev)` | MST all axes; disable CL; zero run and standby currents |
 | 11 | EnterMeasurementMode | `enter_measurement_mode(dev)` | MST all axes; sync target to encoder; zero currents — eliminates motor EMI |
 | 12 | ExitMeasurementMode | `exit_measurement_mode(dev)` | Re-sync target to encoder; restore currents (run=25, standby=8) |
@@ -289,7 +289,11 @@ sending the next command (use `wait_for_idle(dev)`).
 | 14 | MoveAxis1 | `move_absolute_axis_to(dev, 1, pos, speed)` | Move axis 1 to `pos` microsteps above the **encoder zero set by `ReferenceZero`** |
 | 15 | MoveAxis2 | `move_absolute_axis_to(dev, 2, pos, speed)` | Move axis 2 to `pos` microsteps above the **encoder zero set by `ReferenceZero`** |
 | 16 | SimultaneousCalibration | `calibrate!(dev)` | All 3 axes descend together in a round-robin poll loop; each is MST'd and saved independently on stall; GP10=0 when all 3 done |
+| 17 | MoveAxis0AboveCalib | `move_axis_above_calib(dev, 0, nsteps, speed)` | Move axis 0 to `nsteps` above its calibration block; Julia writes absolute target to GP 59 |
+| 18 | MoveAxis1AboveCalib | `move_axis_above_calib(dev, 1, nsteps, speed)` | Move axis 1 to `nsteps` above its calibration block; Julia writes absolute target to GP 60 |
+| 19 | MoveAxis2AboveCalib | `move_axis_above_calib(dev, 2, nsteps, speed)` | Move axis 2 to `nsteps` above its calibration block; Julia writes absolute target to GP 61 |
 | 99 | Error / EmergencyStop | — | Set by board on hard stop; waits for next Julia command |
+| 100 | Ping | `is_program_running(dev)` | No-op; board clears GP10 to 0. Used by Julia to detect whether the TMCL program is running — no movement, no state change |
 | 999 | EndLoop | `end_program(dev)` | MST all axes; STOP — terminates the TMCL program |
 
 ---
@@ -392,7 +396,7 @@ positions survive a full power cut.
 | 54 | `GP_CALIB_POS_AXIS1` | Board (calibration routines) | StartMove, `move_all_axes_to` |
 | 55 | `GP_CALIB_POS_AXIS2` | Board (calibration routines) | StartMove, `move_all_axes_to` |
 | 56–58 | `GP_CALIB_DONE_AXIS0–2` | Board (internal) | SimultaneousCalibration done flags; cleared on exit |
-| 59–61 | `GP_MOVE_TARGET_AXIS0–2` | Julia | StartMove (absolute targets = `calib_pos − offset`) |
+| 59–61 | `GP_MOVE_TARGET_AXIS0–2` | Julia | StartMove (cmd 9, all 3 axes) and MoveAxis0/1/2AboveCalib (cmd 17/18/19, per axis); absolute target = `calib_pos − nsteps` |
 | 108–126 | CL PID parameters | Julia | StartInit |
 | 210 | `GP_ENCODER_RESOLUTION` | Julia | PowerOn |
 | 212–213 | `GP_MAX_ENCODER/VELOCITY_DEVIATION` | Julia | StartInit |
@@ -416,6 +420,9 @@ immediate MST on stall) is identical.
 | `CSUB ReferenceZero` | `reference_zero(dev)` | 5 |
 | `CSUB StartCalibrationSimultaneousAxis` | `calibrate_simultaneous(dev)` | 16 |
 | `CSUB StartMove2` (−500,000) | `move_all_axes_to(dev, 500_000, 51_200)` | 9 |
+| *(no equivalent — per-axis)* | `move_axis_above_calib(dev, 0, nsteps, speed)` | 17 |
+| *(no equivalent — per-axis)* | `move_axis_above_calib(dev, 1, nsteps, speed)` | 18 |
+| *(no equivalent — per-axis)* | `move_axis_above_calib(dev, 2, nsteps, speed)` | 19 |
 | `CSUB EnterMeasurementMode` | `enter_measurement_mode(dev)` | 11 |
 | `CSUB ExitMeasurementMode` | `exit_measurement_mode(dev)` | 12 |
 | `CSUB PowerOff` | `power_off(dev)` | 10 |
@@ -446,10 +453,26 @@ executing its routine while GP 10 ≠ 0.
 |----------|---------|-------|
 | `startup!(dev)` | `power_on` → `start_init` → `disable_closed_loop` → `enable_closed_loop` | Once per power-cycle, before calibration. Sleds must be physically above the calibration blocks. |
 | `calibrate!(dev)` | `calibrate_simultaneous` → STGP 53/54/55 to EEPROM | Can be re-run as many times as needed within a session. |
+| `move_all_axes_to(dev, nsteps, speed)` | reads GP 53/54/55 → writes GP 59/60/61 → cmd 9 | Move all 3 axes simultaneously to `nsteps` above their calibration blocks. Hard stop on any axis stops all three (see below). |
+| `move_axis_above_calib(dev, ax, nsteps, speed)` | reads GP 53+ax → writes GP 59+ax → cmd 17/18/19 | Move a single axis (`ax` ∈ {0,1,2}) to `nsteps` above its calibration block. Requires a prior `calibrate!`. |
+| `move_absolute_axis_to(dev, ax, pos, speed)` | writes GP 0 → cmd 13/14/15 | Move a single axis to an absolute encoder position. |
 | `move_and_measure!(dev, nsteps, speed)` | `move_all_axes_to` → `enter_measurement_mode` | Move to scan position and de-energize motors. |
 | `end_measurement!(dev)` | SAP current restore → `exit_measurement_mode` | Restore currents via SAP (more reliable than AAP/GGP with CL active). |
 | `shutdown!(dev)` | `power_off` | Clean pre-power-off: MST, disable CL, zero currents. |
 | `RefZero_run_only_once_after_unplugging_board!(dev)` | `reference_zero` | **Only after full power loss** (board unplugged, or red button pressed with USB also disconnected) — zeros encoder at current sled positions. Not needed after a red-button press/unpress with USB still connected, because the encoder positions survive in MCU RAM. |
+
+### Hard stop detection in StartMove
+
+When `move_all_axes_to` is running (cmd 9), the `MonitorLoop` on the board polls both `AP 8` (target reached) and `AP 3` (actual velocity) for each axis on every iteration. If any axis has velocity = 0 before reaching its target — indicating it was stopped externally — `StopAllAxes` is triggered:
+
+1. `SAP 17,x, 1,000,000` — boost deceleration on all axes for a fast controlled stop
+2. `MST 0/1/2` — stop all motors
+3. Poll `AP 3` per axis until velocity = 0 (confirm fully stopped)
+4. Wait 20 ticks for mechanical settling
+5. `AAP 17,x` — restore normal deceleration from `GP_MAX_DECELERATION`
+6. `SGP 10, 2, 0` — clear GP10; `wait_for_idle` in Julia unblocks normally
+
+After a hard stop, Julia can send any new command immediately — the board returns to `MainLoop` with all parameters restored.
 
 ### Diagnostic functions
 
@@ -457,8 +480,8 @@ executing its routine while GP 10 ≠ 0.
 |----------|---------|-------------|
 | `read_axis_status(dev)` | `(calib_pos, encoder_pos)` | Logs GP 53/54/55 (calibration block positions) and AP 209 (current encoder positions) for all 3 axes. After a successful `calibrate!`, these two sets of values should be identical. |
 | `read_closed_loop_status(dev)` | `(axis0, axis1, axis2)` Booleans | Logs ENABLED/DISABLED for each axis (AP 129). |
-| `board_status(dev)` | named tuple | Logs supply voltage [V], temperature [°C/K], run current, standby current. |
-| `is_program_running(dev)` | `Bool` | Sends Ping (cmd 100), waits 100 ms, checks if GP 10 was cleared to 0. Returns `true` if the TMCL program is running. No movement or state change. |
+| `board_status(dev)` | named tuple | Logs supply voltage [V], temperature [°C/K], run/standby current (AP, axis 0), and all motion parameters from GP Bank 2: max speed, acceleration, deceleration, current, standby current, encoder resolution. |
+| `is_program_running(dev)` | `Bool` | Sends Ping (cmd 100), waits 100 ms, checks if GP 10 was cleared to 0. Returns `true` if the TMCL program is running. No movement, no state change. |
 
 ---
 
@@ -598,6 +621,9 @@ move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 # move_and_measure!(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED)   # move + enter measurement mode
 # ... acquire data ...
 # end_measurement!(dev)                                     # restore currents
+
+# Optional: move a single axis above its calibration block independently
+# move_axis_above_calib(dev, 0, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 
 # Optional: move a single axis to an absolute encoder position (re-leveling)
 # move_absolute_axis_to(dev, 0, 100_000, DEFAULT_MAX_SPEED); wait_for_idle(dev)

@@ -260,21 +260,40 @@ read_supply_voltage(dev) = query(dev, 15, 8, 1, 0) / 10.0   # Float64, V
 read_temperature(dev)    = query(dev, 15, 9, 1, 0)           # Int, °C
 
 function board_status(dev)
-    supply_V  = read_supply_voltage(dev)        # DC bus voltage (GIO 8, Bank 1)
+    supply_V  = read_supply_voltage(dev)
     t_C       = read_temperature(dev)
     t_K       = t_C + 273.15
-    run_I     = get_axis_parameter(dev, 6, 0)   # AP 6: run current (axis 0, % of max)
-    standby_I = get_axis_parameter(dev, 7, 0)   # AP 7: standby current (axis 0, % of max)
+    run_I     = get_axis_parameter(dev, 6, 0)
+    standby_I = get_axis_parameter(dev, 7, 0)
+    speed     = get_global_parameter(dev, GP_MAX_SPEED)
+    accel     = get_global_parameter(dev, GP_MAX_ACCELERATION)
+    decel     = get_global_parameter(dev, GP_MAX_DECELERATION)
+    cur_run   = get_global_parameter(dev, GP_MAX_CURRENT)
+    cur_std   = get_global_parameter(dev, GP_STANDBY_CURRENT)
+    enc_res   = get_global_parameter(dev, GP_ENCODER_RESOLUTION)
     @info "Board status:"
-    @info "  Supply voltage : $(supply_V) V  (DC bus)"
-    @info "  Temperature    : $(t_C) °C  /  $(t_K) K"
-    @info "  Run current    : $(run_I)  (AP 6, axis 0)"
-    @info "  Standby current: $(standby_I)  (AP 7, axis 0)"
-    return (supply_voltage_V = supply_V,
-            temperature_C    = t_C,
-            temperature_K    = t_K,
-            run_current      = run_I,
-            standby_current  = standby_I)
+    @info "  Supply voltage    : $(supply_V) V  (DC bus)"
+    @info "  Temperature       : $(t_C) °C  /  $(t_K) K"
+    @info "  Run current (AP)  : $(run_I)  (axis 0)"
+    @info "  Standby cur (AP)  : $(standby_I)  (axis 0)"
+    @info "Motion parameters (GP Bank 2):"
+    @info "  Max speed         : $speed  usteps/s"
+    @info "  Max acceleration  : $accel  usteps/s²"
+    @info "  Max deceleration  : $decel  usteps/s²"
+    @info "  Max current       : $cur_run  % of peak"
+    @info "  Standby current   : $cur_std  % of peak"
+    @info "  Encoder resolution: $enc_res  lines/rev"
+    return (supply_voltage_V   = supply_V,
+            temperature_C      = t_C,
+            temperature_K      = t_K,
+            run_current        = run_I,
+            standby_current    = standby_I,
+            max_speed          = speed,
+            max_acceleration   = accel,
+            max_deceleration   = decel,
+            max_current        = cur_run,
+            gp_standby_current = cur_std,
+            encoder_resolution = enc_res)
 end
 
 function read_axis_status(dev)
