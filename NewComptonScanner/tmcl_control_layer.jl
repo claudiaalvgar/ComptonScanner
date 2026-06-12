@@ -21,8 +21,9 @@ export connect_board,
        move_axis_absolute,
        move_all_axes_to,
        move_absolute_axis_to,
+       move_axis_above_calib,
        end_program,
-       check_program_looping,
+       is_program_running,
        startup!,
        calibrate!,
        move_and_measure!,
@@ -220,17 +221,19 @@ exit_measurement_mode(dev)       = set_global_parameter(dev, GP_TMCM_COMMAND, 12
 move_axis_absolute(dev, ax::Int) = set_global_parameter(dev, GP_TMCM_COMMAND, 13 + ax)  # ax ∈ {0,1,2} → cmd ∈ {13,14,15}
 end_program(dev)                 = set_global_parameter(dev, GP_TMCM_COMMAND, 999)
 
-function check_program_looping(dev)
-    end_program(dev)
-    sleep(0.3)   # give the board time to acknowledge and clear GP10
+"""
+Non-destructive check: returns true if the TMCL program is currently running on the board.
+Sends a Ping command (100) which the board clears to 0 without any movement or state change.
+If GP10 is 0 after the wait the program responded; if still 100 nothing is running.
+"""
+function is_program_running(dev; wait_s::Float64 = 0.1)
+    set_global_parameter(dev, GP_TMCM_COMMAND, 100)
+    sleep(wait_s)
     val = get_global_parameter(dev, GP_TMCM_COMMAND)
-    if val == 999
-        @info "No TMCL program was looping — GP10 was not cleared."
-        return false
-    else
-        @info "A TMCL program was looping — GP10 was cleared to $val (program has now stopped)."
-        return true
-    end
+    running = (val == 0)
+    @info running ? "TMCL program is running (Ping acknowledged)." :
+                    "No TMCL program running — Ping was not processed (GP10 = $val)."
+    return running
 end
 
 # ============================================================
@@ -319,6 +322,21 @@ function move_absolute_axis_to(dev, ax::Int, position::Int, speed::Int)
     set_global_parameter(dev, GP_TARGET_POS, position)
     set_global_parameter(dev, GP_MAX_SPEED,  speed)
     move_axis_absolute(dev, ax)   # GP_TMCM_COMMAND = 13/14/15
+end
+
+"""
+Move a single axis to `nsteps` microsteps above its calibration block position.
+Reads CALIB_POS_AXISn from GP 53/54/55, computes absolute target, writes to
+GP 59/60/61, then triggers MoveAxis0/1/2AboveCalib (cmd 17/18/19).
+ax ∈ {0,1,2}.  Requires a prior calibrate!.
+"""
+function move_axis_above_calib(dev, ax::Int, nsteps::Int, speed::Int)
+    gp_calib  = (GP_CALIB_POS_AXIS0,   GP_CALIB_POS_AXIS1,   GP_CALIB_POS_AXIS2  )[ax + 1]
+    gp_target = (GP_MOVE_TARGET_AXIS0, GP_MOVE_TARGET_AXIS1, GP_MOVE_TARGET_AXIS2)[ax + 1]
+    calib = get_global_parameter(dev, gp_calib)
+    set_global_parameter(dev, gp_target, calib - nsteps)
+    set_global_parameter(dev, GP_MAX_SPEED, speed)
+    set_global_parameter(dev, GP_TMCM_COMMAND, 17 + ax)   # 17/18/19 → MoveAxis0/1/2AboveCalib
 end
 
 # ─────────────────────────────────────────────────────────────────────────────

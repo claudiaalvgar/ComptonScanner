@@ -51,6 +51,11 @@ move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 #move_absolute_axis_to(dev, 1, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 1
 #move_absolute_axis_to(dev, 2, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 2
 
+#Run this to move one axis at a time to a position above its calibration block (nsteps above block)
+#move_axis_above_calib(dev, 0, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 0
+#move_axis_above_calib(dev, 1, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 1
+#move_axis_above_calib(dev, 2, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 2
+
 
 #### 4th block : Power off and potentially stop code looping on tmcm board ####
 #shutdown!(dev)
@@ -77,4 +82,4 @@ move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 #board_status(dev)         # log supply voltage [V] and temperature [°C / K]
 #read_axis_status(dev)     # get axis status : calibration point and encoder positions for the 3 axis
 #read_closed_loop_status(dev)
-#check_program_looping(dev)   # sends end_program, waits 300ms, reports and returns true/false
+#is_program_running(dev)   # Ping (cmd 100): returns true if TMCMCode_newversion is looping

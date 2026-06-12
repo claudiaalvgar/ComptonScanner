@@ -23,7 +23,11 @@
 //   14  MoveAxis1
 //   15  MoveAxis2
 //   16  SimultaneousCalibration — all 3 axes descend together, each MST'd on stall
+//   17  MoveAxis0AboveCalib — move axis 0 to (CALIB_POS_AXIS0 − offset); Julia writes abs target to GP59
+//   18  MoveAxis1AboveCalib — move axis 1 to (CALIB_POS_AXIS1 − offset); Julia writes abs target to GP60
+//   19  MoveAxis2AboveCalib — move axis 2 to (CALIB_POS_AXIS2 − offset); Julia writes abs target to GP61
 //   99  Error/Jam        — set by EmergencyStop; persists until Julia clears it
+//  100  Ping             — no-op; clears GP10 to 0 so Julia can detect the program is running
 //  999  EndLoop          — MST all axes, STOP
 // ========================================================================
 
@@ -158,8 +162,20 @@ MainLoop:
     COMP 16
     JC EQ, SimultaneousCalibration
 
+    COMP 17
+    JC EQ, MoveAxis0AboveCalib
+
+    COMP 18
+    JC EQ, MoveAxis1AboveCalib
+
+    COMP 19
+    JC EQ, MoveAxis2AboveCalib
+
     //COMP 99
     //JC EQ, ErrorState
+
+    COMP 100
+    JC EQ, Ping
 
     COMP 999
     JC EQ, EndLoop
@@ -459,7 +475,7 @@ JA MainLoop
 // 6. START CALIBRATION AXIS 0
 // ========================================================================
 StartCalibrationAxis0:
-    SCO 0,0,1000000
+    SCO 0,0,4000000
     MVP COORD,0,0
     WAIT TICKS,0,100
 CalibAxis0Stop:
@@ -479,7 +495,7 @@ JA MainLoop
 // 7. START CALIBRATION AXIS 1
 // ========================================================================
 StartCalibrationAxis1:
-    SCO 0,1,1000000
+    SCO 0,1,4000000
     MVP COORD,1,0
     WAIT TICKS,0,100
 CalibAxis1Stop:
@@ -499,7 +515,7 @@ JA MainLoop
 // 8. START CALIBRATION AXIS 2
 // ========================================================================
 StartCalibrationAxis2:
-   SCO 0,2,1000000
+   SCO 0,2,4000000
     MVP COORD,2,0
     WAIT TICKS,0,100
 CalibAxis2Stop:
@@ -541,31 +557,63 @@ StartMove:
     MVP COORD,1,0
     MVP COORD,2,0
 
-    JA MonitorLoop
-
 MonitorLoop:
 
-//AXIS 0
-GAP 8,0
-COMP 1
-JC EQ,Axis1_
-//AXIS 1
-Axis1_:
+    // Axis 0: if target not reached, check velocity — zero means unexpected stop
+    GAP 8,0
+    COMP 1
+    JC EQ, CheckAxis1
+    GAP 3,0
+    COMP 0
+    JC EQ, StopAllAxes
 
+CheckAxis1:
+    // Axis 1
     GAP 8,1
     COMP 1
-    JC EQ,Axis2_
-//AXIS 2
-Axis2_:
+    JC EQ, CheckAxis2
+    GAP 3,1
+    COMP 0
+    JC EQ, StopAllAxes
 
+CheckAxis2:
+    // Axis 2
     GAP 8,2
     COMP 1
-    JC EQ,CheckAllDone
+    JC EQ, CheckAllDone
+    GAP 3,2
+    COMP 0
+    JC EQ, StopAllAxes
 
 ContinueLoop:
-
     WAIT TICKS,0,1
     JA MonitorLoop
+
+StopAllAxes:
+    SAP 17,0, 1000000          // boost deceleration for fast controlled stop
+    SAP 17,1, 1000000
+    SAP 17,2, 1000000
+    MST 0
+    MST 1
+    MST 2
+WaitStop0:
+    GAP 3,0
+    COMP 0
+    JC NE, WaitStop0
+WaitStop1:
+    GAP 3,1
+    COMP 0
+    JC NE, WaitStop1
+WaitStop2:
+    GAP 3,2
+    COMP 0
+    JC NE, WaitStop2
+    WAIT TICKS,0,20            // mechanical settling
+    AAP 17,0                   // restore normal deceleration from GP_MAX_DECELERATION
+    AAP 17,1
+    AAP 17,2
+    SGP 10, 2, 0
+    JA MainLoop
 
 CheckAllDone:
     GAP 8,0
@@ -809,9 +857,9 @@ SimultaneousCalibration:
     AAP 4,1
     AAP 4,2
 
-    SCO 0,0,1000000
-    SCO 0,1,1000000
-    SCO 0,2,1000000
+    SCO 0,0,4000000
+    SCO 0,1,4000000
+    SCO 0,2,4000000
 
     MVP COORD,0,0
     MVP COORD,1,0
@@ -894,6 +942,73 @@ CalibSimWait:
     JA CalibSimLoop
 
 CalibSimDone:
+    SGP 10, 2, 0
+    JA MainLoop
+
+// ========================================================================
+// 17. MOVE AXIS 0 ABOVE CALIBRATION POINT
+//     Julia writes abs target (CALIB_POS_AXIS0 − offset) to MOVE_TARGET_AXIS0 (GP59) before triggering.
+// ========================================================================
+MoveAxis0AboveCalib:
+    GGP Max_Speed, 2
+    AAP 4,0
+    GGP MOVE_TARGET_AXIS0, 2
+    ACO 0,0
+    MVP COORD,0,0
+MonitorAxis0AboveLoop:
+    GAP 8,0
+    COMP 1
+    JC EQ, DoneAxis0Above
+    WAIT TICKS,0,1
+    JA MonitorAxis0AboveLoop
+DoneAxis0Above:
+    SGP 10, 2, 0
+    JA MainLoop
+
+// ========================================================================
+// 18. MOVE AXIS 1 ABOVE CALIBRATION POINT
+//     Julia writes abs target (CALIB_POS_AXIS1 − offset) to MOVE_TARGET_AXIS1 (GP60) before triggering.
+// ========================================================================
+MoveAxis1AboveCalib:
+    GGP Max_Speed, 2
+    AAP 4,1
+    GGP MOVE_TARGET_AXIS1, 2
+    ACO 0,1
+    MVP COORD,1,0
+MonitorAxis1AboveLoop:
+    GAP 8,1
+    COMP 1
+    JC EQ, DoneAxis1Above
+    WAIT TICKS,0,1
+    JA MonitorAxis1AboveLoop
+DoneAxis1Above:
+    SGP 10, 2, 0
+    JA MainLoop
+
+// ========================================================================
+// 19. MOVE AXIS 2 ABOVE CALIBRATION POINT
+//     Julia writes abs target (CALIB_POS_AXIS2 − offset) to MOVE_TARGET_AXIS2 (GP61) before triggering.
+// ========================================================================
+MoveAxis2AboveCalib:
+    GGP Max_Speed, 2
+    AAP 4,2
+    GGP MOVE_TARGET_AXIS2, 2
+    ACO 0,2
+    MVP COORD,2,0
+MonitorAxis2AboveLoop:
+    GAP 8,2
+    COMP 1
+    JC EQ, DoneAxis2Above
+    WAIT TICKS,0,1
+    JA MonitorAxis2AboveLoop
+DoneAxis2Above:
+    SGP 10, 2, 0
+    JA MainLoop
+
+// ========================================================================
+// 100. PING — no-op; clears GP10 so Julia can confirm the program is running
+// ========================================================================
+Ping:
     SGP 10, 2, 0
     JA MainLoop
 

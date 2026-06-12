@@ -458,7 +458,7 @@ executing its routine while GP 10 ≠ 0.
 | `read_axis_status(dev)` | `(calib_pos, encoder_pos)` | Logs GP 53/54/55 (calibration block positions) and AP 209 (current encoder positions) for all 3 axes. After a successful `calibrate!`, these two sets of values should be identical. |
 | `read_closed_loop_status(dev)` | `(axis0, axis1, axis2)` Booleans | Logs ENABLED/DISABLED for each axis (AP 129). |
 | `board_status(dev)` | named tuple | Logs supply voltage [V], temperature [°C/K], run current, standby current. |
-| `check_program_looping(dev)` | `Bool` | Sends `end_program`, waits 300 ms, checks if GP 10 was cleared. Returns `true` if a TMCL program was looping. |
+| `is_program_running(dev)` | `Bool` | Sends Ping (cmd 100), waits 100 ms, checks if GP 10 was cleared to 0. Returns `true` if the TMCL program is running. No movement or state change. |
 
 ---
 
