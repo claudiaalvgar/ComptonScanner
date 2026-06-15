@@ -20,16 +20,14 @@ export connect_board,
        exit_measurement_mode,
        move_axis_absolute,
        move_all_axes_to,
-       move_all_axes_to_mm,
+       move_all_axes_to_cm,
        move_absolute_axis_to,
        move_axis_above_calib,
-       move_axis_above_calib_mm,
+       move_axis_above_calib_cm,
        end_program,
        is_program_running,
        startup!,
        calibrate!,
-       move_and_measure!,
-       move_and_measure_mm!,
        end_measurement!,
        shutdown!,
        read_closed_loop_status,
@@ -98,8 +96,9 @@ const GP_MAX_VELOCITY_DEVIATION         = 213
 # ── Default parameter values ──────────────────────────────────────────────────
 # Match the SGP static-init values in the TMC scripts.
 # Override via keyword arguments on power_on / start_init.
-# 1 motor revolution = 5 mm = 51,200 microsteps → 10,240 usteps/mm
+# 1 motor revolution = 5 mm = 51,200 microsteps → 10,240 usteps/mm → 102,400 usteps/cm
 const USTEPS_PER_MM = 10_240
+const USTEPS_PER_CM = 102_400
 
 const DEFAULT_ENCODER_RESOLUTION             = 2000
 const DEFAULT_MAX_SPEED                      = 51_200
@@ -222,7 +221,10 @@ reference_zero(dev)              = set_global_parameter(dev, GP_TMCM_COMMAND, 5)
 calibrate_axis(dev, ax::Int)     = set_global_parameter(dev, GP_TMCM_COMMAND, 6 + ax)   # ax ∈ {0,1,2} → cmd ∈ {6,7,8}
 calibrate_simultaneous(dev)      = set_global_parameter(dev, GP_TMCM_COMMAND, 16)
 power_off(dev)                   = set_global_parameter(dev, GP_TMCM_COMMAND, 10)
-enter_measurement_mode(dev)      = set_global_parameter(dev, GP_TMCM_COMMAND, 11)
+function enter_measurement_mode(dev)
+    set_global_parameter(dev, GP_TMCM_COMMAND, 11)
+    wait_for_idle(dev)
+end
 exit_measurement_mode(dev)       = set_global_parameter(dev, GP_TMCM_COMMAND, 12)
 move_axis_absolute(dev, ax::Int) = set_global_parameter(dev, GP_TMCM_COMMAND, 13 + ax)  # ax ∈ {0,1,2} → cmd ∈ {13,14,15}
 end_program(dev)                 = set_global_parameter(dev, GP_TMCM_COMMAND, 999)
@@ -365,33 +367,25 @@ function move_axis_above_calib(dev, ax::Int, nsteps::Int, speed::Int)
 end
 
 """
-Move all 3 axes to `distance_mm` millimetres above their respective calibration
-block positions.  `speed_mm_s` is the motion speed in mm/s.
-Converts to microsteps internally using USTEPS_PER_MM (10,240 usteps/mm).
+Move all 3 axes to `distance_cm` centimetres above their respective calibration
+block positions.  `speed_cm_s` is the motion speed in cm/s.
+Converts to microsteps internally using USTEPS_PER_CM (102,400 usteps/cm).
 """
-function move_all_axes_to_mm(dev, distance_mm::Real, speed_mm_s::Real)
-    move_all_axes_to(dev, round(Int, distance_mm * USTEPS_PER_MM),
-                          round(Int, speed_mm_s  * USTEPS_PER_MM))
+function move_all_axes_to_cm(dev, distance_cm::Real, speed_cm_s::Real)
+    move_all_axes_to(dev, round(Int, distance_cm * USTEPS_PER_CM),
+                          round(Int, speed_cm_s  * USTEPS_PER_CM))
 end
 
 """
-Move a single axis to `distance_mm` millimetres above its calibration block position.
-`speed_mm_s` is the motion speed in mm/s.  ax ∈ {0,1,2}.
-Converts to microsteps internally using USTEPS_PER_MM (10,240 usteps/mm).
+Move a single axis to `distance_cm` centimetres above its calibration block position.
+`speed_cm_s` is the motion speed in cm/s.  ax ∈ {0,1,2}.
+Converts to microsteps internally using USTEPS_PER_CM (102,400 usteps/cm).
 """
-function move_axis_above_calib_mm(dev, ax::Int, distance_mm::Real, speed_mm_s::Real)
-    move_axis_above_calib(dev, ax, round(Int, distance_mm * USTEPS_PER_MM),
-                                   round(Int, speed_mm_s  * USTEPS_PER_MM))
+function move_axis_above_calib_cm(dev, ax::Int, distance_cm::Real, speed_cm_s::Real)
+    move_axis_above_calib(dev, ax, round(Int, distance_cm * USTEPS_PER_CM),
+                                   round(Int, speed_cm_s  * USTEPS_PER_CM))
 end
 
-"""
-Move all 3 axes to `distance_mm` millimetres above calibration blocks, then enter
-measurement mode (de-energize motors).  `speed_mm_s` is the motion speed in mm/s.
-"""
-function move_and_measure_mm!(dev, distance_mm::Real, speed_mm_s::Real)
-    move_and_measure!(dev, round(Int, distance_mm * USTEPS_PER_MM),
-                           round(Int, speed_mm_s  * USTEPS_PER_MM))
-end
 
 # ─────────────────────────────────────────────────────────────────────────────
 # startup!
@@ -439,18 +433,8 @@ function calibrate!(dev)
 end
 
 # ─────────────────────────────────────────────────────────────────────────────
-# move_and_measure! and exit_measurement_mode!
+# end_measurement!
 # ─────────────────────────────────────────────────────────────────────────────
-function move_and_measure!(dev, nsteps_to_move::Int, speed::Int)
-    @info "Moving to scan position: $nsteps_to_move usteps above block"
-    move_all_axes_to(dev, nsteps_to_move, speed); wait_for_idle(dev)
-
-    @info "EnterMeasurementMode — stop motors, zero currents"
-    enter_measurement_mode(dev); wait_for_idle(dev)
-
-    @info "At measurement position."
-end
-
 function end_measurement!(dev;
         max_current     = DEFAULT_MAX_CURRENT,
         standby_current = DEFAULT_STANDBY_CURRENT)

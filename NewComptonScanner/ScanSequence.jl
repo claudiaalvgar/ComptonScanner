@@ -40,10 +40,10 @@ const MOVE_NSTEPS = 500_000   # microsteps above calibration block
 const DEFAULT_MAX_SPEED = 51_200
 #Run this without entering measuring mode and to move the 3 axis####################
 move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
-#Run this entering measuring mode moving the 3 axis####################
-#const MOVE_NSTEPS = 600_000   # microsteps above calibration block
-#const DEFAULT_MAX_SPEED = 51_200
-#move_and_measure!(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED) #Calls move_all_axes_to and enter_measurement_mode
+#Run this to move the 3 axis then enter measurement mode (de-energize motors)
+#move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
+#enter_measurement_mode(dev)   # includes 2 s settle + wait_for_idle internally
+#... acquire data ...
 #end_measurement!(dev)
 #Run this to move one axis at a time independently (ax: 0/1/2, position: absolute encoder usteps)
 #const MOVE_TO_POSITION = 100_000
@@ -55,6 +55,22 @@ move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 #move_axis_above_calib(dev, 0, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 0
 #move_axis_above_calib(dev, 1, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 1
 #move_axis_above_calib(dev, 2, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 2
+
+#const MOVE_CM    = 2.0   # cm above calibration block
+#const SPEED_CM_S = 0.5   # cm/s  (= 5 mm/s = 51,200 usteps/s)
+#Run this to move all 3 axes 2 cm above calibration blocks
+#move_all_axes_to_cm(dev, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)
+
+#Run this to move all 3 axes 2 cm above calibration then enter measurement mode (de-energize motors)
+#move_all_axes_to_cm(dev, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)
+#enter_measurement_mode(dev)   # includes 2 s settle + wait_for_idle internally
+#... acquire data ...
+#end_measurement!(dev)
+
+#Run this to move one axis at a time 2 cm above its calibration block
+#move_axis_above_calib_cm(dev, 0, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)  # axis 0
+#move_axis_above_calib_cm(dev, 1, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)  # axis 1
+#move_axis_above_calib_cm(dev, 2, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)  # axis 2
 
 
 #### 4th block : Power off and potentially stop code looping on tmcm board ####
