@@ -407,6 +407,33 @@ DisableClosedLoop_Routine:
 
     RSUB
 
+EnableClosedLoop_Routine:
+
+    SAP 129,0,1
+    SAP 129,1,1
+    SAP 129,2,1
+
+    WaitEnableClosedLoop_Routine:
+
+    WAIT TICKS,0,1
+    GAP 133,0
+    COMP 1
+    JC NE, WaitEnableClosedLoop_Routine
+
+    WAIT TICKS,0,1
+    GAP 133,1
+    COMP 1
+    JC NE, WaitEnableClosedLoop_Routine
+
+    WAIT TICKS,0,1
+    GAP 133,2
+    COMP 1
+    JC NE, WaitEnableClosedLoop_Routine
+
+    WAIT TICKS,0,20
+
+    RSUB
+
 // ========================================================================
 // 4. ENABLE CLOSED LOOP
 // ========================================================================
@@ -707,25 +734,7 @@ EnterMeasurementMode:
     MST 1
     MST 2
 
-WaitAxis0Stopped_M:
-    GAP 3,0
-    COMP 0
-    JC NE,WaitAxis0Stopped_M
-
-WaitAxis1Stopped_M:
-    GAP 3,1
-    COMP 0
-    JC NE,WaitAxis1Stopped_M
-
-WaitAxis2Stopped_M:
-    GAP 3,2
-    COMP 0
-    JC NE,WaitAxis2Stopped_M
-
-    WAIT TICKS,0,50         // mechanical settling
-
-    // Sync target to current position before de-energizing
-    // so CL does not fight to return to old move target on restore
+    // Sync target to actual so CL sees zero error when re-enabled
     GAP 209,0
     AAP 0,0
 
@@ -735,14 +744,24 @@ WaitAxis2Stopped_M:
     GAP 209,2
     AAP 0,2
 
-    SAP 6,0,0               // zero run current — stops all PWM switching
+    // Flush CL I-term: disable (~50ms) resets the integrator accumulated during
+    // any hard stop. All CL parameters and gains are unchanged — only the
+    // integrator state is cleared. Self-locking lead screws won't drift in 50ms.
+    CSUB DisableClosedLoop_Routine
+
+    // Immediately re-enable CL: I-term=0, target=actual → commands ~0 corrections
+    CSUB EnableClosedLoop_Routine
+
+    WAIT TICKS,0,50         // CL settles before zeroing current
+
+    SAP 6,0,0               // zero run current — CL active but commands 0 at this point
     SAP 6,1,0
     SAP 6,2,0
     SAP 7,0,0               // zero hold current
     SAP 7,1,0
     SAP 7,2,0
 
-    WAIT TICKS,0,100        // electrical settling before measurement
+    WAIT TICKS,0,1000       // quiet measurement wait, motors fully de-energized
 
     SGP 10, 2, 0
     JA MainLoop
@@ -754,14 +773,19 @@ WaitAxis2Stopped_M:
 // =====================================================
 ExitMeasurementMode:
 
-    // Re-sync target in case of drift during measurement
+    // Sync both the ramp generator (AP 1) and target (AP 0) to the encoder.
+    // Without AAP 1, the ramp output diverges from the encoder during de-energization
+    // and CL fights to reconcile them on restore, causing oscillation on the next move.
     GAP 209,0
+    AAP 1,0
     AAP 0,0
 
     GAP 209,1
+    AAP 1,1
     AAP 0,1
 
     GAP 209,2
+    AAP 1,2
     AAP 0,2
 
     GGP Max_Current, 2
@@ -955,12 +979,26 @@ MoveAxis0AboveCalib:
     GGP MOVE_TARGET_AXIS0, 2
     ACO 0,0
     MVP COORD,0,0
+    WAIT TICKS,0,10             // let AP 8 clear before first poll
 MonitorAxis0AboveLoop:
     GAP 8,0
     COMP 1
     JC EQ, DoneAxis0Above
+    GAP 3,0
+    COMP 0
+    JC EQ, HardStopAxis0Above   // velocity=0 but not at target → hard stop
     WAIT TICKS,0,1
     JA MonitorAxis0AboveLoop
+HardStopAxis0Above:
+    MST 0
+    GAP 209,0
+    AAP 0,0                     // sync CL target to current position so CL stops fighting
+    SAP 129,0,0                 // disable CL on axis 0 to flush I-term
+    WAIT TICKS,0,50
+    SAP 129,0,1                 // re-enable CL with clean integrator
+    WAIT TICKS,0,20
+    SGP 10, 2, 0
+    JA MainLoop
 DoneAxis0Above:
     SGP 10, 2, 0
     JA MainLoop
@@ -975,12 +1013,26 @@ MoveAxis1AboveCalib:
     GGP MOVE_TARGET_AXIS1, 2
     ACO 0,1
     MVP COORD,1,0
+    WAIT TICKS,0,10             // let AP 8 clear before first poll
 MonitorAxis1AboveLoop:
     GAP 8,1
     COMP 1
     JC EQ, DoneAxis1Above
+    GAP 3,1
+    COMP 0
+    JC EQ, HardStopAxis1Above   // velocity=0 but not at target → hard stop
     WAIT TICKS,0,1
     JA MonitorAxis1AboveLoop
+HardStopAxis1Above:
+    MST 1
+    GAP 209,1
+    AAP 0,1                     // sync CL target to current position so CL stops fighting
+    SAP 129,1,0                 // disable CL on axis 1 to flush I-term
+    WAIT TICKS,0,50
+    SAP 129,1,1                 // re-enable CL with clean integrator
+    WAIT TICKS,0,20
+    SGP 10, 2, 0
+    JA MainLoop
 DoneAxis1Above:
     SGP 10, 2, 0
     JA MainLoop
@@ -995,12 +1047,26 @@ MoveAxis2AboveCalib:
     GGP MOVE_TARGET_AXIS2, 2
     ACO 0,2
     MVP COORD,2,0
+    WAIT TICKS,0,10             // let AP 8 clear before first poll
 MonitorAxis2AboveLoop:
     GAP 8,2
     COMP 1
     JC EQ, DoneAxis2Above
+    GAP 3,2
+    COMP 0
+    JC EQ, HardStopAxis2Above   // velocity=0 but not at target → hard stop
     WAIT TICKS,0,1
     JA MonitorAxis2AboveLoop
+HardStopAxis2Above:
+    MST 2
+    GAP 209,2
+    AAP 0,2                     // sync CL target to current position so CL stops fighting
+    SAP 129,2,0                 // disable CL on axis 2 to flush I-term
+    WAIT TICKS,0,50
+    SAP 129,2,1                 // re-enable CL with clean integrator
+    WAIT TICKS,0,20
+    SGP 10, 2, 0
+    JA MainLoop
 DoneAxis2Above:
     SGP 10, 2, 0
     JA MainLoop
