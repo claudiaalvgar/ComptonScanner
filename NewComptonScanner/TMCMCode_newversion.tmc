@@ -639,6 +639,15 @@ WaitStop2:
     AAP 17,0                   // restore normal deceleration from GP_MAX_DECELERATION
     AAP 17,1
     AAP 17,2
+    GAP 209,0                  // sync ramp and CL target to actual position
+    AAP 1,0
+    AAP 0,0
+    GAP 209,1
+    AAP 1,1
+    AAP 0,1
+    GAP 209,2
+    AAP 1,2
+    AAP 0,2
     SGP 10, 2, 0
     JA MainLoop
 
@@ -815,12 +824,23 @@ MoveAxis0:
     GGP Target_Pos, 2
     ACO 0,0
     MVP COORD,0,0
+    WAIT TICKS,0,10             // let AP 8 clear before first poll
 MonitorAxis0Loop:
     GAP 8,0
     COMP 1
     JC EQ, DoneAxis0
+    GAP 3,0
+    COMP 0
+    JC EQ, HardStopAxis0        // velocity=0 but not at target → hard stop
     WAIT TICKS,0,1
     JA MonitorAxis0Loop
+HardStopAxis0:
+    MST 0
+    GAP 209,0
+    AAP 1,0
+    AAP 0,0                     // sync ramp and CL target to actual position
+    SGP 10, 2, 0
+    JA MainLoop
 DoneAxis0:
     SGP 10, 2, 0
     JA MainLoop
@@ -834,12 +854,23 @@ MoveAxis1:
     GGP Target_Pos, 2
     ACO 0,1
     MVP COORD,1,0
+    WAIT TICKS,0,10
 MonitorAxis1Loop:
     GAP 8,1
     COMP 1
     JC EQ, DoneAxis1
+    GAP 3,1
+    COMP 0
+    JC EQ, HardStopAxis1
     WAIT TICKS,0,1
     JA MonitorAxis1Loop
+HardStopAxis1:
+    MST 1
+    GAP 209,1
+    AAP 1,1
+    AAP 0,1
+    SGP 10, 2, 0
+    JA MainLoop
 DoneAxis1:
     SGP 10, 2, 0
     JA MainLoop
@@ -853,12 +884,23 @@ MoveAxis2:
     GGP Target_Pos, 2
     ACO 0,2
     MVP COORD,2,0
+    WAIT TICKS,0,10
 MonitorAxis2Loop:
     GAP 8,2
     COMP 1
     JC EQ, DoneAxis2
+    GAP 3,2
+    COMP 0
+    JC EQ, HardStopAxis2
     WAIT TICKS,0,1
     JA MonitorAxis2Loop
+HardStopAxis2:
+    MST 2
+    GAP 209,2
+    AAP 1,2
+    AAP 0,2
+    SGP 10, 2, 0
+    JA MainLoop
 DoneAxis2:
     SGP 10, 2, 0
     JA MainLoop
