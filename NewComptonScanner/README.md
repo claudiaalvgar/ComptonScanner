@@ -5,6 +5,24 @@ Three sleds move vertically. Positive encoder direction = downward, negative = u
 
 ---
 
+## Important: red button and power-on behaviour
+
+The program is stored in **flash (non-volatile)**. It auto-starts on **every power-on** — including after a red-button press/release and after a complete power cycle (USB + power disconnected) — regardless of whether the program was previously stopped with `end_program(dev)`.
+
+**Consequences:**
+- Pressing and releasing the red button (with USB connected and board powered) always restarts the last uploaded program.
+- A complete power-off followed by power-on also restarts the last uploaded program.
+- `end_program(dev)` only stops the software loop; it does not prevent the program from restarting on any subsequent power-on or red-button press.
+- The program stored in flash persists until a new one is uploaded via TMCL-IDE.
+
+**In practice:** after calling `end_program(dev)`, do not press the red button or power-cycle the board if you want the program to stay stopped.
+
+**Auto-start:** the firmware has auto-start enabled (`SGP 77, 0, 1`). This means there is no way to have a program-free board after a red-button press or power cycle as long as auto-start remains enabled. Disabling it (`SGP 77, 0, 0`) would require manually starting the program from TMCL-IDE at the beginning of every session.
+
+**To get a program-free board:** load `DisableAutostart.tmc` via TMCL-IDE. It stops all motors, disables closed-loop, zeros all currents, disables auto-start, and halts. Safe to load in any state — whether the motors are running, stuck, or already at rest. After it runs, pressing the red button or power-cycling the board will not restart any program. To restore normal operation, reload `TMCMCode_newversion.tmc` via TMCL-IDE (re-enable auto-start in the upload settings).
+
+---
+
 ## Repository files
 
 **Loop mode — Julia-driven (active workflow)**
@@ -77,20 +95,12 @@ CSUB EnterMeasurementMode
 // perform HPGe measurement
 CSUB ExitMeasurementMode
 ```
-`EnterMeasurementMode` de-energizes motors for low-noise HPGe detector data acquisition:
-1. Stops all axes (`MST 0/1/2`) and polls `GAP 3` until each axis confirms stopped.
-2. Waits 50 ticks for mechanical settling.
-3. Syncs target position (`AAP 0`) to current encoder (`GAP 209`) — prevents the CL
-   controller from fighting to return to an old move target when current is restored.
-4. Sets `SAP 6` (run current) and `SAP 7` (hold current) to 0, stopping all PWM
-   switching and eliminating motor EMI during measurement.
-5. Waits 100 ticks for electrical settling before measurement begins.
+`EnterMeasurementMode` de-energizes motors for low-noise HPGe detector data acquisition.
+For the full sequence and observed encoder drift, see [Measurement mode](#measurement-mode----entermeasurementmode--exitmeasurementmode) below — the `TMCMCode_newversion.tmc` implementation is the current reference.
 
-`ExitMeasurementMode` restores the motion system after measurement:
-1. Re-syncs target to current encoder position (in case sleds drifted during measurement)
-   to prevent jerk on restore.
-2. Restores `SAP 6` to 25 (run current) and `SAP 7` to 8 (hold current).
-3. Waits 50 ticks for the CL controller to stabilize at the current position.
+`ExitMeasurementMode` restores the motion system after measurement. Re-syncs both the
+ramp generator (AP 1) and CL target (AP 0) to the current encoder position before
+restoring currents, to prevent oscillation if the sled drifted during measurement.
 
 
 **Step 5 — power off**
@@ -285,9 +295,9 @@ sending the next command (use `wait_for_idle(dev)`).
 | 10 | PowerOff | `power_off(dev)` | MST all axes; disable CL; zero run and standby currents |
 | 11 | EnterMeasurementMode | `enter_measurement_mode(dev)` | MST all axes; sync target to encoder; zero currents — eliminates motor EMI |
 | 12 | ExitMeasurementMode | `exit_measurement_mode(dev)` | Re-sync target to encoder; restore currents (run=25, standby=8) |
-| 13 | MoveAxis0 | `move_absolute_axis_to(dev, 0, pos, speed)` | Move axis 0 to `pos` microsteps above the **encoder zero set by `ReferenceZero`** (positive = down, negative = up relative to that origin) |
-| 14 | MoveAxis1 | `move_absolute_axis_to(dev, 1, pos, speed)` | Move axis 1 to `pos` microsteps above the **encoder zero set by `ReferenceZero`** |
-| 15 | MoveAxis2 | `move_absolute_axis_to(dev, 2, pos, speed)` | Move axis 2 to `pos` microsteps above the **encoder zero set by `ReferenceZero`** |
+| 13 | MoveAxis0 | `move_absolute_axis_to(dev, 0, pos, speed)` | Move axis 0 to `pos` microsteps (absolute encoder position). Hard stop detection: if velocity reaches 0 before position is reached, syncs CL target and ramp to actual position and returns (GP10=0). |
+| 14 | MoveAxis1 | `move_absolute_axis_to(dev, 1, pos, speed)` | Move axis 1 to `pos` microsteps (absolute encoder position). Same hard stop detection as MoveAxis0. |
+| 15 | MoveAxis2 | `move_absolute_axis_to(dev, 2, pos, speed)` | Move axis 2 to `pos` microsteps (absolute encoder position). Same hard stop detection as MoveAxis0. |
 | 16 | SimultaneousCalibration | `calibrate!(dev)` | All 3 axes descend together in a round-robin poll loop; each is MST'd and saved independently on stall; GP10=0 when all 3 done |
 | 17 | MoveAxis0AboveCalib | `move_axis_above_calib(dev, 0, nsteps, speed)` | Move axis 0 to `nsteps` above its calibration block; Julia writes absolute target to GP 59 |
 | 18 | MoveAxis1AboveCalib | `move_axis_above_calib(dev, 1, nsteps, speed)` | Move axis 1 to `nsteps` above its calibration block; Julia writes absolute target to GP 60 |
@@ -464,16 +474,35 @@ executing its routine while GP 10 ≠ 0.
 
 ### Hard stop detection in StartMove
 
-When `move_all_axes_to` is running (cmd 9), the `MonitorLoop` on the board polls both `AP 8` (target reached) and `AP 3` (actual velocity) for each axis on every iteration. If any axis has velocity = 0 before reaching its target — indicating it was stopped externally — `StopAllAxes` is triggered:
+When `move_all_axes_to` is running (cmd 9), the `MonitorLoop` on the board polls both `AP 8` (target reached) and `AP 3` (actual velocity) for each axis on every iteration. If any axis reaches velocity = 0 before `AP 8` is set — whether from an external stop or because the motor stalled — `StopAllAxes` is triggered:
 
 1. `SAP 17,x, 1,000,000` — boost deceleration on all axes for a fast controlled stop
 2. `MST 0/1/2` — stop all motors
 3. Poll `AP 3` per axis until velocity = 0 (confirm fully stopped)
 4. Wait 20 ticks for mechanical settling
 5. `AAP 17,x` — restore normal deceleration from `GP_MAX_DECELERATION`
-6. `SGP 10, 2, 0` — clear GP10; `wait_for_idle` in Julia unblocks normally
+6. `GAP 209,N; AAP 1,N; AAP 0,N` (for each axis) — sync the ramp generator and CL target to the actual encoder position
+7. `SGP 10, 2, 0` — clear GP10; `wait_for_idle` in Julia unblocks normally
 
-After a hard stop, Julia can send any new command immediately — the board returns to `MainLoop` with all parameters restored.
+**Step 6 (target sync) is critical for direction changes after a hard stop.** Without it, `AP 0` (the CL target register) still points at the original destination after `MST`. When the next move starts, the CL controller fights the new commanded direction to drive toward the old target — the sled cannot move in the opposite direction. With target sync, `AP 0` is set to the actual encoder position so the CL controller sees zero error and the next move starts cleanly in any direction.
+
+`StopAllAxes` also fires when a move completes normally (velocity reaches 0 at the target, just before `AP 8` is set in the same poll cycle). In that case the target sync is a no-op (AP 0 already matches the encoder), so normal completions are unaffected.
+
+After a hard stop, Julia can send any new command immediately — including a move in the opposite direction — and the board returns to `MainLoop` with all parameters restored.
+
+**Verified test — hard stop then direction change:**
+
+After `calibrate!` (calibration positions: ax0 = 410,368 · ax1 = 410,033 · ax2 = 410,881), `move_all_axes_to_cm(dev, 6, ...)` was sent (target = 6 cm above calibration blocks = ~614,400 usteps above block). Axis 2 was stopped by hand mid-move. Then `move_all_axes_to_cm(dev, 2, ...)` was sent to move down to 2 cm above the block:
+
+| Sled | Encoder pos after moving to 2 cm | Steps above calib block |
+|------|----------------------------------|------------------------|
+| 0    | 204,441                          | 410,368 − 204,441 = **205,927** |
+| 1    | 204,081                          | 410,033 − 204,081 = **205,952** |
+| 2    | 206,106                          | 410,881 − 206,106 = **204,775** |
+
+Target was 2 cm = 204,800 usteps. All three axes landed within ~1,200 usteps (0.12 mm) of the 2 cm target. Direction change after hard stop confirmed working.
+
+Board state at the time of hard stop: voltage = 23.6 V, temperature = 39 °C, run current = 25%, standby = 8%, CL ENABLED on all axes.
 
 ### Diagnostic functions
 
@@ -661,25 +690,48 @@ end_program(dev)    # stop the TMCL loop on the board
 ## Measurement mode — EnterMeasurementMode / ExitMeasurementMode
 
 `EnterMeasurementMode` (command 11) de-energizes all motors for low-noise HPGe acquisition:
-1. MST all axes; polls `GAP 3` (actual velocity) until each axis confirms zero.
-2. Waits 50 ticks for mechanical settling.
-3. Syncs target (`AAP 0`) to current encoder (`GAP 209`) — prevents the CL controller
-   from fighting to return to the old move target when current is restored.
-4. Sets run current (`SAP 6`) and standby current (`SAP 7`) to 0 — stops all PWM
-   switching, eliminating motor EMI during measurement.
-5. Waits 100 ticks for electrical settling before measurement begins.
+1. MST all axes.
+2. Syncs CL target (`AAP 0`) to current encoder (`GAP 209`) for each axis — prevents the
+   CL controller from fighting to return to an old move target when re-enabled.
+3. Disables closed-loop on all axes (`DisableClosedLoop_Routine`) — flushes the accumulated
+   I-term from any prior hard stop or prolonged stall so the integrator starts clean.
+4. Immediately re-enables closed-loop (`EnableClosedLoop_Routine`) — clean integrator, target
+   already synced to actual, so CL commands ~0 correction current.
+5. Waits 50 ticks for CL to stabilise at the current position.
+6. Sets run current (`SAP 6`) and standby current (`SAP 7`) to 0 — stops all PWM switching,
+   eliminating motor EMI during measurement.
+7. Waits 1000 ticks for complete electrical settling before measurement begins.
 
 `ExitMeasurementMode` (command 12) restores the motion system:
-1. Re-syncs target to current encoder position (accounts for any sled drift during
-   measurement) — prevents jerk on restore.
+1. Re-syncs ramp generator (`AAP 1`) and CL target (`AAP 0`) to the current encoder
+   position for each axis — accounts for any sled drift during measurement and prevents
+   oscillation when CL resumes driving a non-zero error.
 2. Restores run current = 25 and standby current = 8.
 3. Waits 50 ticks for CL to stabilise.
 
 Note: `end_measurement!` in Julia uses SAP (direct axis parameter write) rather than
 AAP/GGP to restore currents, because AAP/GGP is unreliable with CL active.
 
+**Observed encoder drift during `enter_measurement_mode`:** a small encoder drift
+(~128–154 usteps ≈ 0.013–0.015 mm) is consistently measured between the positions
+recorded before and after the call. Example:
+
+| Axis | Encoder before | Encoder after | Drift |
+|------|---------------|--------------|-------|
+| 0    | 1,024         | 1,152        | **+128 usteps** |
+| 1    | 486           | 640          | **+154 usteps** |
+| 2    | 1,254         | 1,408        | **+154 usteps** |
+
+This drift comes from the **1000-tick zero-current window** (step 7 above), during
+which the motors are fully de-energized and the lead screws bear the sled weight
+passively. The CL disable/enable cycle (steps 3–4, ~50 ms) does **not** cause drift —
+the self-locking lead screws do not allow the sleds to move during the brief disable
+window, and the lead screws hold position without current. If drift-free positioning
+is required, call `exit_measurement_mode` (which re-syncs the target to the drifted
+encoder position) before any subsequent move command.
+
 After `exit_measurement_mode` the system is fully operational — CL is still enabled
-and currents are restored.  Because the sleds were moved upward before entering
+and currents are restored. Because the sleds were moved upward before entering
 measurement mode they are above the calibration blocks, so `calibrate!` can be called
 again at any point after `exit_measurement_mode` without any additional steps.
 
@@ -742,6 +794,16 @@ Sled deviation (accumulated, 2 stops): 349,619 − 343,680 = **5,939 usteps = 0.
 Sled deviation after completion: 600,038 − 599,988 = **50 usteps = 0.005 mm**
 
 **Key result:** The accumulated sled misalignment from 2 hard stops (5,939 usteps / 0.58 mm) disappears almost entirely once the movement completes normally to the programmed target. Final inter-sled deviation is 50 usteps (0.005 mm) — two orders of magnitude smaller than the mid-stop deviation.
+
+---
+
+### Why hard stop → direction change previously failed (and what fixed it)
+
+Before the target-sync fix, `StopAllAxes` called `MST` on all axes but did **not** update `AP 0` (the CL target register). After `MST`, the ramp generator stopped, but `AP 0` still held the original destination — for example, 6 cm above the block. The CL controller remained active and continued to fight toward that old target. When Julia then sent a new `move_all_axes_to` in the opposite direction (e.g., down to 2 cm), the new ramp generator target (in AP 1) conflicted with the old CL target still in AP 0. The CL controller and the ramp generator pulled in opposite directions; the motor could not establish motion.
+
+**Fix:** after all axes confirm velocity = 0, execute `GAP 209,N; AAP 1,N; AAP 0,N` for each axis. This writes the actual encoder position into both the ramp generator (AP 1) and the CL target (AP 0), so the CL controller sees zero error at the current position. The next move then starts from a consistent, fight-free state regardless of direction.
+
+**Why a CL I-term flush (disable/enable cycle) is not needed in `StopAllAxes`:** `MonitorLoop` detects a hard stop within ~1 ms (one poll iteration). The I-term has had virtually no time to accumulate significant error at that moment. Target sync alone is sufficient. A CL cycle is only needed when the motor has been stalling for seconds (e.g., the 60-second timeout in the old `MoveAxis0/1/2` implementation, or during `EnterMeasurementMode` where CL is active with zero current for 1000 ticks). In `MoveAxis0AboveCalib/1/2AboveCalib`, the per-axis CL flush is retained because those routines can sit stalled against a mechanical limit for an extended period before the monitoring loop catches it.
 
 ---
 
