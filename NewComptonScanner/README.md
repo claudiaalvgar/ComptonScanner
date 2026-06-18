@@ -21,6 +21,17 @@ The program is stored in **flash (non-volatile)**. It auto-starts on **every pow
 
 **To get a program-free board:** load `DisableAutostart.tmc` via TMCL-IDE. It stops all motors, disables closed-loop, zeros all currents, disables auto-start, and halts. Safe to load in any state — whether the motors are running, stuck, or already at rest. After it runs, pressing the red button or power-cycling the board will not restart any program. To restore normal operation, reload `TMCMCode_newversion.tmc` via TMCL-IDE (re-enable auto-start in the upload settings).
 
+**Verified test — DisableAutostart.tmc:**
+
+Starting state: TMCMCode_newversion.tmc running (after red-button press/unpress), `is_program_running` = true. Sleds at ~2 cm above calibration block: calib = (410,368 · 410,033 · 410,881), encoder = (204,554 · 204,042 · 206,362). CL DISABLED (safety init ran), currents = 0.
+
+1. Load `DisableAutostart.tmc` via TMCL-IDE → `is_program_running` = **false** (STOP executed immediately).
+2. Press red button → unpress red button.
+3. Re-connect Julia → `is_program_running` = **false** ✓ — no program auto-started.
+   Board state: encoder = (204,554 · 204,042 · 205,952), CL DISABLED, currents = 0. Axis 2 encoder drifted 410 usteps (0.040 mm) during the de-energization window — axes 0 and 1 unchanged.
+4. Load `TMCMCode_newversion.tmc` via TMCL-IDE → `is_program_running` = **true** ✓ — normal operation restored, auto-start re-enabled.
+   Encoder positions preserved: (204,554 · 204,042 · 205,952). CL DISABLED (safety init), currents = 0 — `startup!` required before any move.
+
 ---
 
 ## Repository files
@@ -492,15 +503,21 @@ After a hard stop, Julia can send any new command immediately — including a mo
 
 **Verified test — hard stop then direction change:**
 
-After `calibrate!` (calibration positions: ax0 = 410,368 · ax1 = 410,033 · ax2 = 410,881), `move_all_axes_to_cm(dev, 6, ...)` was sent (target = 6 cm above calibration blocks = ~614,400 usteps above block). Axis 2 was stopped by hand mid-move. Then `move_all_axes_to_cm(dev, 2, ...)` was sent to move down to 2 cm above the block:
+After `calibrate!` (calibration positions: ax0 = 410,368 · ax1 = 410,033 · ax2 = 410,881), `move_all_axes_to_cm(dev, 6, ...)` was sent. Axis 2 was stopped by hand mid-move (hard stop at ~5.35 cm above block — encoder = (−138,420 · −138,754 · −135,295), giving 548,788 · 548,787 · 546,176 usteps above block respectively, inter-sled deviation 2,612 usteps = 0.255 mm). Then `move_all_axes_to_cm(dev, 2, ...)` was sent to move down to 2 cm above the block:
 
-| Sled | Encoder pos after moving to 2 cm | Steps above calib block |
-|------|----------------------------------|------------------------|
-| 0    | 204,441                          | 410,368 − 204,441 = **205,927** |
-| 1    | 204,081                          | 410,033 − 204,081 = **205,952** |
-| 2    | 206,106                          | 410,881 − 206,106 = **204,775** |
+| Sled | Encoder pos after moving to 2 cm | Steps above calib block | Error from 2 cm target |
+|------|----------------------------------|------------------------|------------------------|
+| 0    | 204,441                          | 410,368 − 204,441 = **205,927** | **+1,127 usteps = +0.110 mm** |
+| 1    | 204,081                          | 410,033 − 204,081 = **205,952** | **+1,152 usteps = +0.113 mm** |
+| 2    | 206,106                          | 410,881 − 206,106 = **204,775** | −25 usteps = −0.002 mm |
 
-Target was 2 cm = 204,800 usteps. All three axes landed within ~1,200 usteps (0.12 mm) of the 2 cm target. Direction change after hard stop confirmed working.
+Direction change after hard stop confirmed working. However, axes 0 and 1 overshot by ~1,150 usteps (~0.11 mm) — they stopped about 0.11 mm above the 2 cm target. Axis 2 (the actually hard-stopped sled) landed within 25 usteps.
+
+**Why the ~0.11 mm error on direction change:** `StopAllAxes` syncs the CL target to actual position but does not flush the CL I-term (no CL cycle). The residual I-term from the upward move opposes the new downward move, causing axes to stop slightly short of the downward target. This effect is absent on same-direction moves (which achieve <50 ustep deviation). **For precise positioning after a hard stop, completing the motion to the target in the original direction before reversing gives better accuracy.** The direction-change scenario is functional but introduces a ~0.11 mm systematic offset.
+
+**AP 8 (Position Reached flag) behavior after StopAllAxes:** after the hard stop and target sync, AP 8 reports **1 (target reached)** — because `AAP 0,N` set the CL target to the actual position, so the CL controller sees zero error and the ramp generator considers itself at its destination. This contrasts with calibration hard stops (where the target was 1,000,000 and the sled stopped at ~410,000 — AP 8 correctly shows 0).
+
+`enter_measurement_mode` called after this direction-change sequence: **worked successfully**. Drift: axis0 = +113, axis1 = −39, axis2 = +153 usteps (mixed directions; smaller magnitude than the 128–245 ustep range from other positions, suggesting drift varies with sled height and mechanical state).
 
 Board state at the time of hard stop: voltage = 23.6 V, temperature = 39 °C, run current = 25%, standby = 8%, CL ENABLED on all axes.
 
@@ -557,6 +574,17 @@ and syncs actual and target registers — giving the CL controller a clean zero
 reference.  Calling it again after calibration would reset the origin to the block
 positions, corrupting the coordinate system and breaking hard-stop detection.
 
+**Verified measured behavior — full USB unplug + red button press:**
+
+| State | calib ax0 | calib ax1 | calib ax2 | encoder ax0 | encoder ax1 | encoder ax2 | CL |
+|-------|-----------|-----------|-----------|-------------|-------------|-------------|----|
+| After full unplug (USB + power off) + reload TMCL | 292,831 | 326,035 | 301,264 | **−4** | **−2** | **+1** | DISABLED |
+| After `startup!` | 292,831 | 326,035 | 301,264 | 124 | 126 | 129 | **ENABLED** |
+| After `RefZero` | 292,831 | 326,035 | 301,264 | **0** | **0** | **0** | ENABLED |
+| After `calibrate!` | 409,344 | 409,856 | 409,728 | 409,369 | 409,856 | 409,676 | ENABLED |
+
+Encoder positions (−4, −2, +1) after full power loss confirm the MCU RAM was completely cleared — the encoder values are essentially zero (the sled positions at the time the previous session's `RefZero` was called). Calibration positions (292,831 · 326,035 · 301,264) survived exactly in EEPROM. After `RefZero` sets the new zero reference and `calibrate!` runs, the system is fully operational with fresh calib positions. Note that the new calib positions (~409k usteps) differ from the EEPROM-saved ones because `RefZero` established a new zero reference at the sled positions after restart, so the block distances are measured from that new origin.
+
 ---
 
 ### Scenario B — Red button pressed and unpressed, USB still connected (`AfterRedButton_CodeLooping.jl`)
@@ -586,6 +614,16 @@ Encoder positions drift slightly (~1500 usteps ≈ 0.15 mm) during the red-butto
 period because CL is inactive and the sled is no longer actively held.  This is
 normal.  After `calibrate!`, encoder positions match calibration positions exactly
 — both columns show the same values.
+
+**Second verified instance (USB connected throughout, sleds at various heights):**
+
+| State | calib ax0 | calib ax1 | calib ax2 | encoder ax0 | encoder ax1 | encoder ax2 | CL |
+|-------|-----------|-----------|-----------|-------------|-------------|-------------|----|
+| After red button press + unpress (code was looping) | 410,446 | 410,070 | 409,856 | 103,246 | 102,870 | −104,730 | **DISABLED** |
+| After `startup!` | 410,446 | 410,070 | 409,856 | 103,487 | 103,205 | −104,599 | **ENABLED** |
+| After `calibrate!` | 410,533 | 410,021 | 409,807 | 410,533 | 410,021 | 409,807 | ENABLED |
+
+Encoder positions (103k · 103k · −105k) confirm RAM survived — the sleds were at different heights (axes 0/1 were below the zero reference, axis 2 was above it). Calibration positions (410,446 · 410,070 · 409,856) survived in both EEPROM and RAM. After `calibrate!`, all three encoder positions match calib positions exactly.
 
 This drift could in principle be eliminated by removing the `SAP 129, x, 0` lines
 from the safety-init block at the top of `TMCMCode_newversion.tmc`, so that CL
@@ -712,15 +750,35 @@ end_program(dev)    # stop the TMCL loop on the board
 Note: `end_measurement!` in Julia uses SAP (direct axis parameter write) rather than
 AAP/GGP to restore currents, because AAP/GGP is unreliable with CL active.
 
-**Observed encoder drift during `enter_measurement_mode`:** a small encoder drift
-(~128–154 usteps ≈ 0.013–0.015 mm) is consistently measured between the positions
-recorded before and after the call. Example:
+**Observed encoder drift during `enter_measurement_mode`:** a small encoder drift is consistently measured between the positions recorded before and after the call. Two measurements at different sled heights:
+
+*At ~4 cm above block:*
 
 | Axis | Encoder before | Encoder after | Drift |
 |------|---------------|--------------|-------|
 | 0    | 1,024         | 1,152        | **+128 usteps** |
 | 1    | 486           | 640          | **+154 usteps** |
 | 2    | 1,254         | 1,408        | **+154 usteps** |
+
+*At ~3 cm above block:*
+
+| Axis | Encoder before | Encoder after | Drift |
+|------|---------------|--------------|-------|
+| 0    | 103,359       | 103,552      | **+193 usteps** |
+| 1    | 102,795       | 103,040      | **+245 usteps** |
+| 2    | 102,581       | 102,784      | **+203 usteps** |
+
+A third measurement, taken at ~2 cm after a hard stop + direction change sequence:
+
+| Axis | Encoder before | Encoder after | Drift |
+|------|---------------|--------------|-------|
+| 0    | 204,441       | 204,554      | **+113 usteps** |
+| 1    | 204,081       | 204,042      | **−39 usteps** |
+| 2    | 206,106       | 206,259      | **+153 usteps** |
+
+Axis 1 drifted slightly upward (away from block) — mixed direction, smaller magnitude than other measurements.
+
+Drift range across all measurements: **−39 to +245 usteps (−0.004 to +0.024 mm)**. Direction is usually downward (toward block) but can vary at different sled heights and mechanical states. Magnitude is always sub-0.025 mm. The inter-sled deviation impact is small: in the 3 cm test, deviation before = 52 usteps, after = 42 usteps (drift was nearly uniform across all three axes).
 
 This drift comes from the **1000-tick zero-current window** (step 7 above), during
 which the motors are fully de-energized and the lead screws bear the sled weight
@@ -794,6 +852,199 @@ Sled deviation (accumulated, 2 stops): 349,619 − 343,680 = **5,939 usteps = 0.
 Sled deviation after completion: 600,038 − 599,988 = **50 usteps = 0.005 mm**
 
 **Key result:** The accumulated sled misalignment from 2 hard stops (5,939 usteps / 0.58 mm) disappears almost entirely once the movement completes normally to the programmed target. Final inter-sled deviation is 50 usteps (0.005 mm) — two orders of magnitude smaller than the mid-stop deviation.
+
+---
+
+### Hard stop + resume accuracy — Scenario A (full USB unplug recovery)
+
+Setup: full USB unplug → reload TMCMCode_newversion.tmc → `startup!` → `RefZero` → `calibrate!` (new calib: ax0 = 409,344 · ax1 = 409,856 · ax2 = 409,728). Then `move_all_axes_to_cm(dev, 2.0, 0.5)`:
+
+| Sled | Encoder pos at 2 cm | Steps above calib | Distance |
+|------|---------------------|------------------|---------|
+| 0    | 204,569             | 409,344 − 204,569 = **204,775** | 1.9997 cm |
+| 1    | 205,081             | 409,856 − 205,081 = **204,775** | 1.9997 cm |
+| 2    | 204,953             | 409,728 − 204,953 = **204,775** | 1.9997 cm |
+
+Inter-sled deviation: **0 usteps** — all three axes at exactly the same distance above their respective blocks.
+
+Then `move_all_axes_to_cm(dev, 5.0, 0.5)`. Axis 1 hard stopped mid-move:
+
+| Sled | Encoder at hard stop | Distance traveled from 2 cm start |
+|------|---------------------|----------------------------------|
+| 0    | −33,818             | 204,569 + 33,818 = **238,387** usteps |
+| 1    | −30,592             | 205,081 + 30,592 = **235,673** usteps |
+| 2    | −33,408             | 204,953 + 33,408 = **238,361** usteps |
+
+Inter-sled deviation at hard stop: 238,387 − 235,673 = **2,714 usteps = 0.27 mm**
+
+After resuming and completing the move to 5 cm:
+
+| Sled | Encoder at 5 cm | Additional steps from hard-stop position | Total steps from 2 cm |
+|------|----------------|------------------------------------------|----------------------|
+| 0    | −102,656        | 102,656 − 33,818 = 68,838 | 204,569 + 102,656 = **307,225** |
+| 1    | −102,144        | 102,144 − 30,592 = 71,552 | 205,081 + 102,144 = **307,225** |
+| 2    | −102,272        | 102,272 − 33,408 = 68,864 | 204,953 + 102,272 = **307,225** |
+
+All three axes traveled exactly 307,225 usteps from their 2 cm positions. Final positions above calib:
+- axis0: 409,344 − (−102,656) = **512,000 = 5 cm exactly** ✓
+- axis1: 409,856 − (−102,144) = **512,000 = 5 cm exactly** ✓
+- axis2: 409,728 − (−102,272) = **512,000 = 5 cm exactly** ✓
+
+Inter-sled deviation after completion: **0 usteps**. The mid-stop misalignment of 2,714 usteps (0.27 mm) is fully corrected when the move completes to the programmed target. Board state: voltage = 23.6 V, temperature = 43 °C, CL ENABLED.
+
+---
+
+### Hard stop + resume accuracy — Scenario B (red button with USB connected)
+
+Setup: red button press + unpress (USB connected) → `startup!` → `calibrate!` (calib: ax0 = 410,533 · ax1 = 410,021 · ax2 = 409,807). Voltage at test time: 23.5 V (slightly lower than usual).
+
+`move_all_axes_to_cm(dev, 5.0, 0.5)`. Axis 2 hard stopped mid-move:
+
+| Sled | Encoder at hard stop | Steps above calib block |
+|------|---------------------|------------------------|
+| 0    | 200,767             | 410,533 − 200,767 = **209,766** |
+| 1    | 200,280             | 410,021 − 200,280 = **209,741** |
+| 2    | 202,857             | 409,807 − 202,857 = **206,950** |
+
+Inter-sled deviation at hard stop: 209,766 − 206,950 = **2,816 usteps = 0.275 mm**
+
+After resuming and completing the move to 5 cm:
+
+| Sled | Encoder at 5 cm | Steps above calib block | Distance |
+|------|----------------|------------------------|---------|
+| 0    | −101,441        | 410,533 + 101,441 = **511,974** | 4.9997 cm |
+| 1    | −101,979        | 410,021 + 101,979 = **512,000** | **5.0000 cm** |
+| 2    | −102,193        | 409,807 + 102,193 = **512,000** | **5.0000 cm** |
+
+Inter-sled deviation after completion: **26 usteps = 0.003 mm**. The 2,816-ustep hard-stop misalignment reduces to 26 usteps once the move finishes.
+
+Then `move_all_axes_to_cm(dev, 3.0, 0.5)` (going back down from 5 cm):
+
+| Sled | Encoder at 3 cm | Steps above calib block | Distance |
+|------|----------------|------------------------|---------|
+| 0    | 103,359         | 410,533 − 103,359 = **307,174** | 2.9997 cm |
+| 1    | 102,795         | 410,021 − 102,795 = **307,226** | 3.0003 cm |
+| 2    | 102,581         | 409,807 − 102,581 = **307,226** | 3.0003 cm |
+
+Inter-sled deviation: **52 usteps = 0.005 mm**. Board state: voltage = 23.6 V, temperature = 43 °C, CL ENABLED.
+
+**`enter_measurement_mode` drift from 3 cm position:**
+
+| Axis | Encoder before | Encoder after | Drift |
+|------|---------------|--------------|-------|
+| 0    | 103,359       | 103,552      | **+193 usteps** |
+| 1    | 102,795       | 103,040      | **+245 usteps** |
+| 2    | 102,581       | 102,784      | **+203 usteps** |
+
+Sleds drifted toward the calibration block (encoder increased = downward). Maximum drift 245 usteps ≈ 0.024 mm. Inter-sled deviation before: 52 usteps; after: **42 usteps = 0.004 mm** — drift is not uniform but nearly so, and the inter-sled deviation actually improved slightly. Board state after: run current = 0, standby = 0, CL ENABLED.
+
+This is the second drift measurement (compare with 128–154 usteps documented from a ~4 cm position). The larger values (193–245 usteps) at the 3 cm position suggest drift magnitude may vary with sled height or the state of the lead-screw preload, but both measurements are in the same order of magnitude (sub-0.025 mm). `end_measurement!` restores currents without changing encoder positions.
+
+---
+
+### Full workflow test — startup, calibrate, mixed single-axis and all-axis moves, measurement mode
+
+Setup: TMCMCode_newversion.tmc reloaded after red-button press. `startup!` → `calibrate!`.
+
+Calibration block positions: ax0 = 292,835 · ax1 = 326,039 · ax2 = 300,286
+
+**Move all 3 axes simultaneously to 2 cm above calibration blocks:**
+
+`move_all_axes_to_cm(dev, 2.0, 0.5)` → target = 2 cm = 204,800 usteps above each block.
+
+| Sled | Encoder pos | Steps above calib block | Distance |
+|------|-------------|------------------------|---------|
+| 0    | 88,035      | 292,835 − 88,035 = **204,800** | **2.0000 cm** |
+| 1    | 121,264     | 326,039 − 121,264 = **204,775** | **1.9998 cm** |
+| 2    | 95,511      | 300,286 − 95,511 = **204,775** | **1.9998 cm** |
+
+All three axes within 25 usteps (0.002 mm) of the 204,800-ustep target. Inter-sled deviation: **25 usteps = 0.002 mm**.
+
+**Move axes 0, 1, 2 independently to 4 cm (sequential per-axis commands):**
+
+`move_axis_above_calib_cm(dev, 0, 4.0, 0.5)` → axis 0 moves; axes 1 and 2 hold position.
+`move_axis_above_calib_cm(dev, 1, 4.0, 0.5)` → axis 1 moves; axes 0 and 2 hold position.
+`move_axis_above_calib_cm(dev, 2, 4.0, 0.5)` → axis 2 moves; axes 0 and 1 hold position.
+
+Target = 4 cm = 409,600 usteps above each block.
+
+| Sled | Encoder pos after individual move | Steps above calib block | Distance |
+|------|----------------------------------|------------------------|---------|
+| 0    | −116,765                         | 292,835 + 116,765 = **409,600** | **4.0000 cm** |
+| 1    | −83,561                          | 326,039 + 83,561 = **409,600** | **4.0000 cm** |
+| 2    | −109,314                         | 300,286 + 109,314 = **409,600** | **4.0000 cm** |
+
+All three axes hit exactly 409,600 usteps = 4 cm. Each stationary axis stayed at its prior position while the active axis moved — confirmed by reading encoder after each command.
+
+Board state after per-axis moves: voltage = 23.6 V, temperature = 40 °C, run current = 25%, standby = 8%, CL ENABLED.
+
+**Move all 3 axes simultaneously from 4 cm to 6 cm:**
+
+`move_all_axes_to_cm(dev, 6.0, 0.5)` — axes start from the same 4 cm position, move together.
+
+| Sled | Encoder pos | Steps above calib block | Distance |
+|------|-------------|------------------------|---------|
+| 0    | −321,565    | 292,835 + 321,565 = **614,400** | **6.0000 cm** |
+| 1    | −288,361    | 326,039 + 288,361 = **614,400** | **6.0000 cm** |
+| 2    | −314,089    | 300,286 + 314,089 = **614,375** | **5.9998 cm** |
+
+Inter-sled deviation at 6 cm: **25 usteps = 0.002 mm**.
+
+Board state: voltage = 23.6 V, temperature = 41 °C, run current = 25%, standby = 8%, CL ENABLED.
+
+**`enter_measurement_mode` — got stuck in this test.**
+
+In this test session, `enter_measurement_mode(dev); wait_for_idle(dev)` hung indefinitely. The version of `EnterMeasurementMode` active at the time polled `AP 3` (actual velocity) until each axis confirmed velocity = 0 after MST. After a hard stop, the accumulated CL I-term causes the motor to keep fighting against the mechanical stop even after MST — velocity never settles to 0, and the poll loop never exits. Fix: add a CL disable/enable cycle (`CSUB DisableClosedLoop_Routine / CSUB EnableClosedLoop_Routine`) before zeroing the currents to flush the I-term. Confirmed working in the subsequent session (15 June 2026) — see [below](#full-workflow-with-measurement-mode----complete-startup-to-shutdown) and [Measurement mode](#measurement-mode----entermeasurementmode--exitmeasurementmode).
+
+---
+
+### Full workflow with measurement mode — complete startup to shutdown
+
+Setup: TMCMCode_newversion.tmc reloaded after red-button press. `startup!` → `calibrate!`.
+
+Calibration block positions: ax0 = 292,831 · ax1 = 326,035 · ax2 = 301,264 (encoder = calib exactly after `calibrate!`).
+
+**Move all 3 axes to 2 cm:**
+
+| Sled | Encoder pos | Steps above calib block | Distance |
+|------|-------------|------------------------|---------|
+| 0    | 88,057      | 292,831 − 88,057 = **204,774** | **1.9997 cm** |
+| 1    | 121,261     | 326,035 − 121,261 = **204,774** | **1.9997 cm** |
+| 2    | 96,464      | 301,264 − 96,464  = **204,800** | **2.0000 cm** |
+
+All axes within 26 usteps (0.003 mm) of 204,800-ustep target. Inter-sled deviation: **26 usteps = 0.003 mm**.
+
+**`enter_measurement_mode(dev)` — completed without sticking.**
+
+Called directly after the 2 cm move with no prior hard stop. Completed normally.
+
+| Axis | Encoder before | Encoder after | Drift |
+|------|---------------|--------------|-------|
+| 0    | 88,057        | 88,057       | **0** |
+| 1    | 121,261       | 121,261      | **0** |
+| 2    | 96,464        | 96,464       | **0** |
+
+No encoder drift. Board state after: run current = 0, standby = 0, CL **ENABLED** — motors fully de-energized, closed loop still active with zero error target.
+
+This version was the original `EnterMeasurementMode` (before the CL flush was added). It works correctly when no hard stop has preceded the call — the I-term is clean and the motor stops promptly after MST. Zero drift is expected here because the shorter zero-current window (100 ticks vs 1000 ticks in the updated version) is too brief for any mechanical settling to register.
+
+**`end_measurement!(dev)` — currents restored correctly.**
+
+Encoder positions unchanged: (88,057 · 121,261 · 96,464) — same as after enter. CL ENABLED. Run current = 25, standby = 8, confirmed via `board_status` and `read_closed_loop_status`.
+
+**Move all 3 axes to 4 cm after measurement mode:**
+
+| Sled | Encoder pos | Steps above calib block | Distance |
+|------|-------------|------------------------|---------|
+| 0    | −116,743    | 292,831 + 116,743 = **409,574** | **3.9997 cm** |
+| 1    | −83,565     | 326,035 + 83,565  = **409,600** | **4.0000 cm** |
+| 2    | −108,362    | 301,264 + 108,362 = **409,626** | **4.0003 cm** |
+
+Inter-sled deviation: **52 usteps = 0.005 mm**.
+
+**`shutdown!(dev)` → `end_program(dev)` — clean shutdown verified.**
+
+`shutdown!` output: "PowerOff — Board powered off." `board_status` after shutdown: run current = 0, standby = 0, motion GP parameters preserved. `end_program(dev)` stopped the TMCL loop; `is_program_running(dev)` returned `false` ("No TMCL program running — Ping was not processed"). Red button then pressed.
 
 ---
 

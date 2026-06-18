@@ -1,0 +1,38 @@
+// ========================================================================
+// DisableAutostart.tmc — Load this program when you want a program-free board.
+// Safe to run in any state: mid-move, stuck sled, CL fighting an obstacle.
+//
+// What it does:
+//   1. Boosts deceleration for a fast controlled stop.
+//   2. Stops all motors (MST).
+//   3. Waits 500 ms for all axes to fully decelerate to rest.
+//   4. Disables closed-loop and zeros all currents — fully de-energizes motors.
+//   5. Disables auto-start (SGP 77, Bank 0 = 0) — stored in EEPROM, survives
+//      power cycles. After this runs, pressing the red button or powering on
+//      the board will NOT restart any program automatically.
+//   6. Immediately stops.
+//
+// To restore normal operation:
+//   Load TMCMCode_newversion.tmc via TMCL-IDE and re-enable auto-start
+//   (check the "auto-start" option in the TMCL-IDE upload settings, or
+//   manually set SGP 77, Bank 0 = 1 before loading).
+// ========================================================================
+
+SAP 17, 0, 1000000  // boost deceleration for fast controlled stop
+SAP 17, 1, 1000000
+SAP 17, 2, 1000000
+MST 0               // stop all motors
+MST 1
+MST 2
+WAIT TICKS,0,500    // wait 500 ms — enough for any axis to fully decelerate to rest
+SAP 129, 0, 0       // disable closed-loop axis 0
+SAP 129, 1, 0       // disable closed-loop axis 1
+SAP 129, 2, 0       // disable closed-loop axis 2
+SAP 6, 0, 0         // zero run current axis 0
+SAP 6, 1, 0         // zero run current axis 1
+SAP 6, 2, 0         // zero run current axis 2
+SAP 7, 0, 0         // zero standby current axis 0
+SAP 7, 1, 0         // zero standby current axis 1
+SAP 7, 2, 0         // zero standby current axis 2
+SGP 77, 0, 0        // disable auto-start (EEPROM Bank 0 — persists across power cycles)
+STOP

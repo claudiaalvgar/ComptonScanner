@@ -31,16 +31,33 @@ read_closed_loop_status(dev)
 calibrate!(dev) 
 
 #After calibration we can start moving the 3 axis simultaneously
-const MOVE_NSTEPS = 500_000   # microsteps above calibration block
-const DEFAULT_MAX_SPEED = 51_200
+const MOVE_CM    = 5.0   # cm above calibration block
+const SPEED_CM_S = 0.5   # cm/s (= 5 mm/s = 51,200 usteps/s)
 #Run this without entering measuring mode and to move the 3 axis
-move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
-
+move_all_axes_to_cm(dev, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)
 #or move one axis at a time
+#move_axis_above_calib_cm(dev, 0, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)  # axis 0
+#move_axis_above_calib_cm(dev, 1, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)  # axis 1
+#move_axis_above_calib_cm(dev, 2, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)  # axis 2
+
+
+
+#Equivalent in microsteps (1 cm = 102,400 usteps; 0.5 cm/s = 51,200 usteps/s):
+#const MOVE_NSTEPS = 500_000     # microsteps above calibration block (≈ 5 cm)
+#const DEFAULT_MAX_SPEED = 51_200  # usteps/s
+#move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
+#or move one axis at a time (usteps)
+#move_axis_above_calib(dev, 0, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 0
+#move_axis_above_calib(dev, 1, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 1
+#move_axis_above_calib(dev, 2, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 2
+
+#or move one axis at a time but absolute position
 #const MOVE_TO_POSITION = 100_000 #absolute position with respect to the 0 position (it would go down with respect to the zero position)
 #move_absolute_axis_to(dev, 0, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 0
 #move_absolute_axis_to(dev, 1, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 1
 #move_absolute_axis_to(dev, 2, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 2
+
+
 
 #BEFORE PRESSING THE RED BUTTON TO POWER OFF THE BOARD, FOR A CORRECT TERMINATION OF THE SYSTEM RUN:
 #For a correct termination of the system before pressing the red button run: 
