@@ -5,35 +5,6 @@ Three sleds move vertically. Positive encoder direction = downward, negative = u
 
 ---
 
-## Important: red button and power-on behaviour
-
-The program is stored in **flash (non-volatile)**. It auto-starts on **every power-on** — including after a red-button press/release and after a complete power cycle (USB + power disconnected) — regardless of whether the program was previously stopped with `end_program(dev)`.
-
-**Consequences:**
-- Pressing and releasing the red button (with USB connected and board powered) always restarts the last uploaded program.
-- A complete power-off followed by power-on also restarts the last uploaded program.
-- `end_program(dev)` only stops the software loop; it does not prevent the program from restarting on any subsequent power-on or red-button press.
-- The program stored in flash persists until a new one is uploaded via TMCL-IDE.
-
-**In practice:** after calling `end_program(dev)`, do not press the red button or power-cycle the board if you want the program to stay stopped.
-
-**Auto-start:** the firmware has auto-start enabled (`SGP 77, 0, 1`). This means there is no way to have a program-free board after a red-button press or power cycle as long as auto-start remains enabled. Disabling it (`SGP 77, 0, 0`) would require manually starting the program from TMCL-IDE at the beginning of every session.
-
-**To get a program-free board:** load `DisableAutostart.tmc` via TMCL-IDE. It stops all motors, disables closed-loop, zeros all currents, disables auto-start, and halts. Safe to load in any state — whether the motors are running, stuck, or already at rest. After it runs, pressing the red button or power-cycling the board will not restart any program. To restore normal operation, reload `TMCMCode_newversion.tmc` via TMCL-IDE (re-enable auto-start in the upload settings).
-
-**Verified test — DisableAutostart.tmc:**
-
-Starting state: TMCMCode_newversion.tmc running (after red-button press/unpress), `is_program_running` = true. Sleds at ~2 cm above calibration block: calib = (410,368 · 410,033 · 410,881), encoder = (204,554 · 204,042 · 206,362). CL DISABLED (safety init ran), currents = 0.
-
-1. Load `DisableAutostart.tmc` via TMCL-IDE → `is_program_running` = **false** (STOP executed immediately).
-2. Press red button → unpress red button.
-3. Re-connect Julia → `is_program_running` = **false** ✓ — no program auto-started.
-   Board state: encoder = (204,554 · 204,042 · 205,952), CL DISABLED, currents = 0. Axis 2 encoder drifted 410 usteps (0.040 mm) during the de-energization window — axes 0 and 1 unchanged.
-4. Load `TMCMCode_newversion.tmc` via TMCL-IDE → `is_program_running` = **true** ✓ — normal operation restored, auto-start re-enabled.
-   Encoder positions preserved: (204,554 · 204,042 · 205,952). CL DISABLED (safety init), currents = 0 — `startup!` required before any move.
-
----
-
 ## Repository files
 
 **Loop mode — Julia-driven (active workflow)**
@@ -44,7 +15,8 @@ Starting state: TMCMCode_newversion.tmc running (after red-button press/unpress)
 | `tmcl_control_layer.jl` | Julia module | Full API wrapping every board command as a named Julia function. Included by all scripts below. |
 | `ScanSequence.jl` | Julia script | Normal session: startup → calibration → move. Use after a clean power-off or at the start of a measurement day. |
 | `AfterRedButton_CodeLooping.jl` | Julia script | Resume after a red-button press/unpress **with USB still connected**. Calibration and encoder positions survive in RAM; only `startup!` is required. |
-| `After_UnplugBoard.jl` | Julia script | Full recovery after complete power loss (board unplugged, or red button pressed with USB also disconnected). Must reload TMCL code, call `RefZero` once, then calibrate. |
+| `After_UnplugBoard.jl` | Julia script | Full recovery after complete power loss (board unplugged, or red button pressed with USB also disconnected). Must reload TMCL code, call `RefZero` (via RefZero_run_only_once_after_unplugging_board!(dev)) once, then calibrate. |
+| `DisableAutostart.tmc` | TMCL snippet | One-shot utility to disable auto-start of `TMCMCode_newversion.tmc` on power-on (`SGP 77,0,0`). Load and execute once via TMCL-IDE; the board then powers on idle until a program is explicitly started. |
 
 **Creator Mode — manual TMCL-IDE workflow (legacy)**
 
@@ -253,6 +225,35 @@ global parameter bank 2.  Instead of uncommenting routines in Creator Mode, Juli
 writes a command number to **GP 10 (bank 2)** and reads it back as 0 when the task
 is done.  The program auto-starts after every power-on (SGP 77, Bank 0 = 1 stored in
 EEPROM).
+
+## Important: red button and power-on behaviour
+
+The program is stored in **flash (non-volatile)**. It auto-starts on **every power-on** — including after a red-button press/release and after a complete power cycle (USB + power disconnected) — regardless of whether the program was previously stopped with `end_program(dev)`.
+
+**Consequences:**
+- Pressing and releasing the red button (with USB connected and board powered) always restarts the last uploaded program.
+- A complete power-off followed by power-on also restarts the last uploaded program.
+- `end_program(dev)` only stops the software loop; it does not prevent the program from restarting on any subsequent power-on or red-button press.
+- The program stored in flash persists until a new one is uploaded via TMCL-IDE.
+
+**In practice:** after calling `end_program(dev)`, do not press the red button or power-cycle the board if you want the program to stay stopped.
+
+**Auto-start:** the firmware has auto-start enabled (`SGP 77, 0, 1`). This means there is no way to have a program-free board after a red-button press or power cycle as long as auto-start remains enabled. Disabling it (`SGP 77, 0, 0`) would require manually starting the program from TMCL-IDE at the beginning of every session.
+
+**To get a program-free board:** load `DisableAutostart.tmc` via TMCL-IDE. It stops all motors, disables closed-loop, zeros all currents, disables auto-start, and halts. Safe to load in any state — whether the motors are running, stuck, or already at rest. After it runs, pressing the red button or power-cycling the board will not restart any program. To restore normal operation, reload `TMCMCode_newversion.tmc` via TMCL-IDE (re-enable auto-start in the upload settings).
+
+**Verified test — DisableAutostart.tmc:**
+
+Starting state: TMCMCode_newversion.tmc running (after red-button press/unpress), `is_program_running` = true. Sleds at ~2 cm above calibration block: calib = (410,368 · 410,033 · 410,881), encoder = (204,554 · 204,042 · 206,362). CL DISABLED (safety init ran), currents = 0.
+
+1. Load `DisableAutostart.tmc` via TMCL-IDE → `is_program_running` = **false** (STOP executed immediately).
+2. Press red button → unpress red button.
+3. Re-connect Julia → `is_program_running` = **false** ✓ — no program auto-started.
+   Board state: encoder = (204,554 · 204,042 · 205,952), CL DISABLED, currents = 0. Axis 2 encoder drifted 410 usteps (0.040 mm) during the de-energization window — axes 0 and 1 unchanged.
+4. Load `TMCMCode_newversion.tmc` via TMCL-IDE → `is_program_running` = **true** ✓ — normal operation restored, auto-start re-enabled.
+   Encoder positions preserved: (204,554 · 204,042 · 205,952). CL DISABLED (safety init), currents = 0 — `startup!` required before any move.
+
+
 
 ### Architecture
 
