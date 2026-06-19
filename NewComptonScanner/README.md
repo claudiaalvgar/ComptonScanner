@@ -79,7 +79,7 @@ CSUB EnterMeasurementMode
 CSUB ExitMeasurementMode
 ```
 `EnterMeasurementMode` de-energizes motors for low-noise HPGe detector data acquisition.
-For the full sequence and observed encoder drift, see [Measurement mode](#measurement-mode----entermeasurementmode--exitmeasurementmode) below — the `TMCMCode_newversion.tmc` implementation is the current reference.
+For the full sequence and observed encoder drift, see [Measurement mode](#measurement-mode--entermeasurementmode--exitmeasurementmode) below — the `TMCMCode_newversion.tmc` implementation is the current reference.
 
 `ExitMeasurementMode` restores the motion system after measurement. Re-syncs both the
 ramp generator (AP 1) and CL target (AP 0) to the current encoder position before
@@ -998,7 +998,7 @@ Board state: voltage = 23.6 V, temperature = 41 °C, run current = 25%, standby 
 
 **`enter_measurement_mode` — got stuck in this test.**
 
-In this test session, `enter_measurement_mode(dev); wait_for_idle(dev)` hung indefinitely. The version of `EnterMeasurementMode` active at the time polled `AP 3` (actual velocity) until each axis confirmed velocity = 0 after MST. After a hard stop, the accumulated CL I-term causes the motor to keep fighting against the mechanical stop even after MST — velocity never settles to 0, and the poll loop never exits. Fix: add a CL disable/enable cycle (`CSUB DisableClosedLoop_Routine / CSUB EnableClosedLoop_Routine`) before zeroing the currents to flush the I-term. Confirmed working in the subsequent session (15 June 2026) — see [below](#full-workflow-with-measurement-mode----complete-startup-to-shutdown) and [Measurement mode](#measurement-mode----entermeasurementmode--exitmeasurementmode).
+In this test session, `enter_measurement_mode(dev); wait_for_idle(dev)` hung indefinitely. The version of `EnterMeasurementMode` active at the time polled `AP 3` (actual velocity) until each axis confirmed velocity = 0 after MST. After a hard stop, the accumulated CL I-term causes the motor to keep fighting against the mechanical stop even after MST — velocity never settles to 0, and the poll loop never exits. Fix: add a CL disable/enable cycle (`CSUB DisableClosedLoop_Routine / CSUB EnableClosedLoop_Routine`) before zeroing the currents to flush the I-term. Confirmed working in the subsequent session (15 June 2026) — see [below](#full-workflow-with-measurement-mode--complete-startup-to-shutdown) and [Measurement mode](#measurement-mode--entermeasurementmode--exitmeasurementmode).
 
 * * *
 
@@ -1050,7 +1050,7 @@ Inter-sled deviation: **26 usteps = 0.003 mm**. Board state: voltage = 23.6 V, t
 
 Board state after: run current = 0, standby = 0, CL ENABLED, voltage = 23.6 V, temperature = 40 °C.
 
-*At 3 cm (Scenario B test — see [Hard stop + resume accuracy — Scenario B](#hard-stop--resume-accuracy----scenario-b-red-button-with-usb-connected)):*
+*At 3 cm (Scenario B test — see [Hard stop + resume accuracy — Scenario B](#hard-stop--resume-accuracy--scenario-b-red-button-with-usb-connected)):*
 
 | Axis | Encoder before | Encoder after | Drift |
 |------|---------------|--------------|-------|
