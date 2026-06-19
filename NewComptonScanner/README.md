@@ -3,7 +3,7 @@
 Hardware: TMCM-3351 3-axis closed-loop stepper motor controller.
 Three sleds move vertically. Positive encoder direction = downward, negative = upward.
 
----
+* * *
 
 ## Repository files
 
@@ -24,7 +24,7 @@ Three sleds move vertically. Positive encoder direction = downward, negative = u
 |------|------|---------|
 | `FullTest_CreatorMode.tmc` | TMCL script | Self-contained script for TMCL-IDE Creator Mode. No Julia required. Uncomment the step you want and execute. Used for initial hardware bring-up and hard-stop reproducibility tests. |
 
----
+* * *
 
 ## Main script: FullTest_CreatorMode.tmc
 
@@ -91,7 +91,7 @@ restoring currents, to prevent oscillation if the sled drifted during measuremen
 CSUB PowerOff
 ```
 
----
+* * *
 
 ### What MST does and why it matters
 
@@ -146,7 +146,7 @@ already stalled and been saved. Both `StartCalibration2` and
 `StartCalibrationSimultaneousAxis` write to the same indices 0/1/2, so `StartMove2`
 works unchanged after either calibration routine.
 
----
+* * *
 
 ## Hard stop reproducibility measurements
 
@@ -164,7 +164,7 @@ sleds deviation after hard stop: 155,622 − 152,934 = **2,688 usteps = 0.26 mm*
 
 `EmergencyStop2` raises SAP 17 to 1,000,000 during hard stop. `RecoverDeceleration` then restores it to 51,200.
 
----
+* * *
 
 ### 2nd hard stop — comparing two SAP 17 strategies
 
@@ -187,7 +187,7 @@ sleds deviation after hard stop: 259,046 − 253,644 = **5,402 usteps = 0.52 mm*
 
 sleds deviation after the 2 hard stops and finishing the move: 499,942 − 499,686 = **256 usteps = 0.025 mm**
 
----
+* * *
 
 ## Deprecated: StartCalibration + StartMove instead use StartCalibration2 + StartMove2
 
@@ -205,7 +205,7 @@ This approach is kept in the script for reference but `StartCalibration2 + Start
 should be used instead.
 
 
----
+* * *
 
 ## Other scripts (legacy, single-step use)
 
@@ -284,7 +284,7 @@ This guarantees all axes are de-energized and CL is disabled whenever the board
 restarts.  The self-locking lead-screw spindles hold the sled positions without
 motor current.  Julia's `startup!` re-applies currents and re-enables CL.
 
----
+* * *
 
 ## State machine command register (GP 10, bank 2)
 
@@ -318,7 +318,7 @@ sending the next command (use `wait_for_idle(dev)`).
 | 100 | Ping | `is_program_running(dev)` | No-op; board clears GP10 to 0. Used by Julia to detect whether the TMCL program is running — no movement, no state change |
 | 999 | EndLoop | `end_program(dev)` | MST all axes; STOP — terminates the TMCL program |
 
----
+* * *
 ### High-level composite functions
 
 | Function | Sequence | Notes |
@@ -467,7 +467,7 @@ positions survive a full power cut.
 | 212 | `GP_MAX_ENCODER_DEVIATION` | Julia | StartInit |
 | 213 | `GP_MAX_VELOCITY_DEVIATION` | Julia | StartInit |
 
----
+* * *
 
 ## Behaviour equivalence with FullTest_CreatorMode.tmc
 
@@ -495,7 +495,7 @@ interface.
 parameterized: Julia reads GP 53/54/55, computes per-axis absolute targets
 (`calib_pos − nsteps`), writes them to GP 59/60/61, and triggers command 9.
 
----
+* * *
 
 ## Julia interface — tmcl_control_layer.jl
 
@@ -549,7 +549,7 @@ Direction change after hard stop confirmed working. However, axes 0 and 1 oversh
 
 Board state at the time of hard stop: voltage = 23.6 V, temperature = 39 °C, run current = 25%, standby = 8%, CL ENABLED on all axes.
 
----
+* * *
 
 ## Startup scenarios
 
@@ -607,7 +607,7 @@ positions, corrupting the coordinate system and breaking hard-stop detection.
 
 Encoder positions (−4, −2, +1) after full power loss confirm the MCU RAM was completely cleared — the encoder values are essentially zero (the sled positions at the time the previous session's `RefZero` was called). Calibration positions (292,831 · 326,035 · 301,264) survived exactly in EEPROM. After `RefZero` sets the new zero reference and `calibrate!` runs, the system is fully operational with fresh calib positions. Note that the new calib positions (~409k usteps) differ from the EEPROM-saved ones because `RefZero` established a new zero reference at the sled positions after restart, so the block distances are measured from that new origin.
 
----
+* * *
 
 ### Scenario B — Red button pressed and unpressed, USB still connected (`AfterRedButton_CodeLooping.jl`)
 
@@ -699,7 +699,7 @@ shutdown!(dev)      # MST all, disable CL, zero currents
 end_program(dev)    # stop the TMCL loop on the board for the current sesion but not after pressing and unpressing red button or after powering off the board
 ```
 
----
+* * *
 
 ## Calibration and encoder zero — key rules
 
@@ -725,7 +725,7 @@ relative to that reference.
    commutation state would no longer match the new encoder = 0 reference, causing
    incorrect hard-stop detection and erratic motion.
 
----
+* * *
 
 ## Measurement mode — EnterMeasurementMode / ExitMeasurementMode
 
@@ -797,7 +797,7 @@ and currents are restored. Because the sleds were moved upward before entering
 measurement mode they are above the calibration blocks, so `calibrate!` can be called
 again at any point after `exit_measurement_mode` without any additional steps.
 
----
+* * *
 
 ## Red button and hard stop — end-to-end verification
 
@@ -816,7 +816,7 @@ Drift after red button plus startup (this is due to disabling and enabling close
 
 **Shutdown verification:** `shutdown!` zeroed run and standby currents (AP 6/7 = 0, confirmed via `board_status`). `end_program` stopped the TMCL loop; `is_program_running` returned `false`.
 
----
+* * *
 
 ### Julia-driven hard stop test — `move_all_axes_to`, 600,000-step target, 2 consecutive hard stops
 
@@ -857,7 +857,7 @@ Sled deviation after completion: 600,038 − 599,988 = **50 usteps = 0.005 mm**
 
 **Key result:** The accumulated sled misalignment from 2 hard stops (5,939 usteps / 0.58 mm) disappears almost entirely once the movement completes normally to the programmed target. Final inter-sled deviation is 50 usteps (0.005 mm) — two orders of magnitude smaller than the mid-stop deviation.
 
----
+* * *
 
 ### Hard stop + resume accuracy — Scenario A (full USB unplug recovery)
 
@@ -896,7 +896,7 @@ All three axes traveled exactly 307,225 usteps from their 2 cm positions. Final 
 
 Inter-sled deviation after completion: **0 usteps**. The mid-stop misalignment of 2,714 usteps (0.27 mm) is fully corrected when the move completes to the programmed target. Board state: voltage = 23.6 V, temperature = 43 °C, CL ENABLED.
 
----
+* * *
 
 ### Hard stop + resume accuracy — Scenario B (red button with USB connected)
 
@@ -944,7 +944,7 @@ Sleds drifted toward the calibration block (encoder increased = downward). Maxim
 
 This is the second drift measurement (compare with 128–154 usteps documented from a ~4 cm position). The larger values (193–245 usteps) at the 3 cm position suggest drift magnitude may vary with sled height or the state of the lead-screw preload, but both measurements are in the same order of magnitude (sub-0.025 mm). `end_measurement!` restores currents without changing encoder positions.
 
----
+* * *
 
 ### Full workflow test — startup, calibrate, mixed single-axis and all-axis moves, measurement mode
 
@@ -1000,7 +1000,7 @@ Board state: voltage = 23.6 V, temperature = 41 °C, run current = 25%, standby 
 
 In this test session, `enter_measurement_mode(dev); wait_for_idle(dev)` hung indefinitely. The version of `EnterMeasurementMode` active at the time polled `AP 3` (actual velocity) until each axis confirmed velocity = 0 after MST. After a hard stop, the accumulated CL I-term causes the motor to keep fighting against the mechanical stop even after MST — velocity never settles to 0, and the poll loop never exits. Fix: add a CL disable/enable cycle (`CSUB DisableClosedLoop_Routine / CSUB EnableClosedLoop_Routine`) before zeroing the currents to flush the I-term. Confirmed working in the subsequent session (15 June 2026) — see [below](#full-workflow-with-measurement-mode----complete-startup-to-shutdown) and [Measurement mode](#measurement-mode----entermeasurementmode--exitmeasurementmode).
 
----
+* * *
 
 ### Full workflow with measurement mode — complete startup to shutdown
 
@@ -1068,7 +1068,7 @@ Encoder positions unchanged: (1,152 · 640 · 1,383) — identical to post-enter
 
 `board_status` after shutdown: run current = 0, standby = 0, motion GP parameters preserved. `end_program(dev)` stopped the TMCL loop; `is_program_running(dev)` returned `false` ("No TMCL program running — Ping was not processed"). Red button then pressed.
 
----
+* * *
 
 ### Why hard stop → direction change previously failed (and what fixed it)
 
@@ -1078,7 +1078,7 @@ Before the target-sync fix, `StopAllAxes` called `MST` on all axes but did **not
 
 **Why a CL I-term flush (disable/enable cycle) is not needed in `StopAllAxes`:** `MonitorLoop` detects a hard stop within ~1 ms (one poll iteration). The I-term has had virtually no time to accumulate significant error at that moment. Target sync alone is sufficient. A CL cycle is only needed when the motor has been stalling for seconds (e.g., the 60-second timeout in the old `MoveAxis0/1/2` implementation, or during `EnterMeasurementMode` where CL is active with zero current for 1000 ticks). In `MoveAxis0AboveCalib/1/2AboveCalib`, the per-axis CL flush is retained because those routines can sit stalled against a mechanical limit for an extended period before the monitoring loop catches it.
 
----
+* * *
 
 ## Clean shutdown procedure
 
@@ -1099,7 +1099,7 @@ disables CL and zeros currents on every program start.  Calling `shutdown!` firs
 still best practice — it leaves the board in a known idle state and avoids the CL
 controller being active at the moment of power loss.
 
----
+* * *
 
 ## Default motion parameters
 
