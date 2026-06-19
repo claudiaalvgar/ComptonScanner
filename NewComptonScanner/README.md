@@ -727,7 +727,7 @@ relative to that reference.
 
 * * *
 
-## Measurement mode — EnterMeasurementMode / ExitMeasurementMode
+## Measurement mode — EnterMeasurementMode / ExitMeasurementMode {#measurement-mode--entermeasurementmode--exitmeasurementmode}
 
 `EnterMeasurementMode` (command 11) de-energizes all motors for low-noise HPGe acquisition:
 1. MST all axes.
@@ -898,7 +898,7 @@ Inter-sled deviation after completion: **0 usteps**. The mid-stop misalignment o
 
 * * *
 
-### Hard stop + resume accuracy — Scenario B (red button with USB connected)
+### Hard stop + resume accuracy — Scenario B (red button with USB connected) {#hard-stop--resume-accuracy--scenario-b-red-button-with-usb-connected}
 
 Setup: red button press + unpress (USB connected) → `startup!` → `calibrate!` (calib: ax0 = 410,533 · ax1 = 410,021 · ax2 = 409,807). Voltage at test time: 23.5 V (slightly lower than usual).
 
@@ -1002,7 +1002,7 @@ In this test session, `enter_measurement_mode(dev); wait_for_idle(dev)` hung ind
 
 * * *
 
-### Full workflow with measurement mode — complete startup to shutdown
+### Full workflow with measurement mode — complete startup to shutdown {#full-workflow-with-measurement-mode--complete-startup-to-shutdown}
 
 Setup: TMCMCode_newversion.tmc loaded (auto-start). `startup!` → `calibrate!`.
 
