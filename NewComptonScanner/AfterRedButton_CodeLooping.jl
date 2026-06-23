@@ -16,6 +16,8 @@ const GP_BANK     = 2
 dev = connect_board(BOARD_IP, BOARD_PORT)
 sleep(2.0) 
 
+is_program_running(dev)
+
 #Check the values stay for calibration point and encoder positions for the 3 axis and that closed loop is disabled
 read_axis_status(dev)
 read_closed_loop_status(dev)
@@ -28,8 +30,8 @@ startup!(dev)                # Re enables closed loop that is disabled after unp
 read_axis_status(dev)
 read_closed_loop_status(dev)
 
-# We can calibrate again if needed, recommended since diabling and enabling the closed loop moves a bit the sleds and the encoder positions
-calibrate!(dev) 
+# NOT NEEDED: We can calibrate again if needed, recommended since diabling and enabling the closed loop moves a bit the sleds and the encoder positions
+#calibrate!(dev) 
 
 #or just start moving the 3 axis simultaneously
 const MOVE_CM    = 5.0   # cm above calibration block
@@ -59,7 +61,9 @@ move_all_axes_to_cm(dev, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)
 #move_absolute_axis_to(dev, 1, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 1
 #move_absolute_axis_to(dev, 2, MOVE_TO_POSITION, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 2
 
-
+enter_measurement_mode(dev)   # includes 2 s settle + wait_for_idle internally
+#... acquire data ...
+end_measurement!(dev)
 
 #BEFORE PRESSING THE RED BUTTON TO POWER OFF THE BOARD, FOR A CORRECT TERMINATION OF THE SYSTEM RUN:
 #For a correct termination of the system before pressing the red button run: 

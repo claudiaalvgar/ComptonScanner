@@ -15,6 +15,8 @@ const GP_BANK     = 2
 dev = connect_board(BOARD_IP, BOARD_PORT)
 sleep(2.0) 
 
+is_program_running(dev)
+
 #Check random values stay for calibration point and encoder positions for the 3 axis and that closed loop is disabled
 read_axis_status(dev)
 read_closed_loop_status(dev)
