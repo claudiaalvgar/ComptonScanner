@@ -512,6 +512,7 @@ CalibAxis0Stop:
     JC NE, CalibAxis0Stop
     MST 0
     GAP 209,0
+    AAP 1,0                      // sync ramp-gen actual to encoder
     AAP 0,0                      // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS0,2        // CALIB_POS_AXIS0 = encoder pos at block
 
@@ -532,6 +533,7 @@ CalibAxis1Stop:
     JC NE, CalibAxis1Stop
     MST 1
     GAP 209,1
+    AAP 1,1                      // sync ramp-gen actual to encoder
     AAP 0,1                      // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS1,2        // CALIB_POS_AXIS1 = encoder pos at block
 
@@ -552,6 +554,7 @@ CalibAxis2Stop:
     JC NE, CalibAxis2Stop
     MST 2
     GAP 209,2
+    AAP 1,2                      // sync ramp-gen actual to encoder
     AAP 0,2                      // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS2,2        // CALIB_POS_AXIS2 = encoder pos at copper block
 
@@ -951,6 +954,7 @@ CalibSimLoop:
 
     MST 0
     GAP 209,0
+    AAP 1,0                 // sync ramp-gen actual to encoder
     AAP 0,0                 // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS0,2   // CALIB_POS_AXIS0 = encoder pos at block
     CALC LOAD,1
@@ -968,6 +972,7 @@ CalibSimCheck1:
 
     MST 1
     GAP 209,1
+    AAP 1,1                 // sync ramp-gen actual to encoder
     AAP 0,1                 // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS1,2   // CALIB_POS_AXIS1 = encoder pos at block
     CALC LOAD,1
@@ -985,6 +990,7 @@ CalibSimCheck2:
 
     MST 2
     GAP 209,2
+    AAP 1,2                 // sync ramp-gen actual to encoder
     AAP 0,2                 // sync CL target to block — stops motor fighting block
     AGP CALIB_POS_AXIS2,2   // CALIB_POS_AXIS2 = encoder pos at block
     CALC LOAD,1
