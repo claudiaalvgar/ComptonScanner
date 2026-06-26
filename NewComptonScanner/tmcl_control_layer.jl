@@ -133,11 +133,11 @@ const DEFAULT_MAX_VELOCITY_DEVIATION         = 30_000
 # and sustain motion, so we raise max_current and slow the ramp.
 # max_encoder_deviation / max_velocity_deviation are loosened because the motor
 # lags the ramp generator more under load; tight limits trigger false stall stops.
-const LOADED_MAX_CURRENT             = 80      # was 25 — raise torque ceiling
+const LOADED_MAX_CURRENT             = 40      # was 25 — raise torque ceiling
 const LOADED_MAX_SPEED               = 25_600  # was 51_200 — half speed
 const LOADED_MAX_ACCELERATION        = 10_240  # was 51_200 — 5× slower ramp start
 const LOADED_MAX_DECELERATION        = 10_240  # was 51_200 — 5× slower ramp stop
-const LOADED_MAX_ENCODER_DEVIATION   = 5_000   # was 1_000 — allow more lag under load
+const LOADED_MAX_ENCODER_DEVIATION   = 2_000   # was 1_000 — allow more lag under load
 const LOADED_MAX_VELOCITY_DEVIATION  = 60_000  # was 30_000 — same reason
 
 # ============================================================
@@ -326,10 +326,11 @@ function read_axis_status(dev)
              get_axis_parameter(dev, GP_ENCODER_POS, 1),
              get_axis_parameter(dev, GP_ENCODER_POS, 2))
 
-    # Inter-axis encoder deviations (axis i − axis j)
-    dev01_us = enc[1] - enc[2]
-    dev02_us = enc[1] - enc[3]
-    dev12_us = enc[2] - enc[3]
+    # Inter-axis deviations: difference in distance travelled from calibration block
+    dev01_us = dist_us[1] - dist_us[2]
+    dev02_us = dist_us[1] - dist_us[3]
+    dev12_us = dist_us[2] - dist_us[3]
+
 
     # Distance of each sled above its calibration block (calib − enc, positive = above block)
     dist_us = (calib[1] - enc[1], calib[2] - enc[2], calib[3] - enc[3])
