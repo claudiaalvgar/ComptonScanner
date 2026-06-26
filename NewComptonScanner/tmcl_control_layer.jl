@@ -326,14 +326,13 @@ function read_axis_status(dev)
              get_axis_parameter(dev, GP_ENCODER_POS, 1),
              get_axis_parameter(dev, GP_ENCODER_POS, 2))
 
+    # Distance of each sled above its calibration block (calib − enc, positive = above block)
+    dist_us = (calib[1] - enc[1], calib[2] - enc[2], calib[3] - enc[3])
+
     # Inter-axis deviations: difference in distance travelled from calibration block
     dev01_us = dist_us[1] - dist_us[2]
     dev02_us = dist_us[1] - dist_us[3]
     dev12_us = dist_us[2] - dist_us[3]
-
-
-    # Distance of each sled above its calibration block (calib − enc, positive = above block)
-    dist_us = (calib[1] - enc[1], calib[2] - enc[2], calib[3] - enc[3])
 
     @info "Calibration positions (usteps): axis0=$(calib[1])  axis1=$(calib[2])  axis2=$(calib[3])"
     @info "Encoder positions     (usteps): axis0=$(enc[1])  axis1=$(enc[2])  axis2=$(enc[3])"
