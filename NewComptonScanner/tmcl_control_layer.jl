@@ -311,10 +311,37 @@ function read_axis_status(dev)
     enc   = (get_axis_parameter(dev, GP_ENCODER_POS, 0),
              get_axis_parameter(dev, GP_ENCODER_POS, 1),
              get_axis_parameter(dev, GP_ENCODER_POS, 2))
+
+    # Inter-axis encoder deviations (axis i − axis j)
+    dev01_us = enc[1] - enc[2]
+    dev02_us = enc[1] - enc[3]
+    dev12_us = enc[2] - enc[3]
+
+    # Distance of each sled above its calibration block (calib − enc, positive = above block)
+    dist_us = (calib[1] - enc[1], calib[2] - enc[2], calib[3] - enc[3])
+
     @info "Calibration positions (usteps): axis0=$(calib[1])  axis1=$(calib[2])  axis2=$(calib[3])"
     @info "Encoder positions     (usteps): axis0=$(enc[1])  axis1=$(enc[2])  axis2=$(enc[3])"
-    return (calib_pos = calib, encoder_pos = enc)
+    @info "Inter-sled deviations:"
+    @info "  axis0−axis1: $(dev01_us) usteps  /  $(dev01_us / USTEPS_PER_MM) mm"
+    @info "  axis0−axis2: $(dev02_us) usteps  /  $(dev02_us / USTEPS_PER_MM) mm"
+    @info "  axis1−axis2: $(dev12_us) usteps  /  $(dev12_us / USTEPS_PER_MM) mm"
+    @info "Distance above calibration block:"
+    @info "  axis0: $(dist_us[1]) usteps  /  $(dist_us[1] / USTEPS_PER_MM) mm"
+    @info "  axis1: $(dist_us[2]) usteps  /  $(dist_us[2] / USTEPS_PER_MM) mm"
+    @info "  axis2: $(dist_us[3]) usteps  /  $(dist_us[3] / USTEPS_PER_MM) mm"
+
+    return (calib_pos          = calib,
+            encoder_pos        = enc,
+            sled_deviation_01  = (usteps = dev01_us, mm = dev01_us / USTEPS_PER_MM),
+            sled_deviation_02  = (usteps = dev02_us, mm = dev02_us / USTEPS_PER_MM),
+            sled_deviation_12  = (usteps = dev12_us, mm = dev12_us / USTEPS_PER_MM),
+            dist_from_calib    = (usteps = dist_us,
+                                  mm     = (dist_us[1] / USTEPS_PER_MM,
+                                            dist_us[2] / USTEPS_PER_MM,
+                                            dist_us[3] / USTEPS_PER_MM)))
 end
+
 
 function read_closed_loop_status(dev)
     cl = ntuple(ax -> query(dev, 6, 129, ax - 1, 0) == 1, 3)

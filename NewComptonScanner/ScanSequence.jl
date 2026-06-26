@@ -56,10 +56,10 @@ move_all_axes_to(dev, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)
 #move_axis_above_calib(dev, 1, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 1
 #move_axis_above_calib(dev, 2, MOVE_NSTEPS, DEFAULT_MAX_SPEED); wait_for_idle(dev)  # axis 2
 
-#const MOVE_CM    = 2.0   # cm above calibration block
-#const SPEED_CM_S = 0.5   # cm/s  (= 5 mm/s = 51,200 usteps/s)
+const MOVE_CM    = 2.0   # cm above calibration block
+const SPEED_CM_S = 0.5   # cm/s  (= 5 mm/s = 51,200 usteps/s)
 #Run this to move all 3 axes 2 cm above calibration blocks
-#move_all_axes_to_cm(dev, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)
+move_all_axes_to_cm(dev, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)
 
 #Run this to move all 3 axes 2 cm above calibration then enter measurement mode (de-energize motors)
 #move_all_axes_to_cm(dev, MOVE_CM, SPEED_CM_S); wait_for_idle(dev)
