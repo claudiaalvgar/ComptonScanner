@@ -27,6 +27,7 @@ export connect_board,
        end_program,
        is_program_running,
        startup!,
+       startup_loaded!,
        calibrate!,
        end_measurement!,
        shutdown!,
@@ -125,6 +126,19 @@ const DEFAULT_CL_STARTUP                     = 25
 const DEFAULT_POS_WINDOW                     = 100
 const DEFAULT_MAX_ENCODER_DEVIATION          = 1000
 const DEFAULT_MAX_VELOCITY_DEVIATION         = 30_000
+
+# ── Loaded-platform parameter values (~20 kg block) ──────────────────────────
+# Self-locking lead screws hold position without current, so standby_current is
+# unchanged.  The extra mass raises the torque needed to break static friction
+# and sustain motion, so we raise max_current and slow the ramp.
+# max_encoder_deviation / max_velocity_deviation are loosened because the motor
+# lags the ramp generator more under load; tight limits trigger false stall stops.
+const LOADED_MAX_CURRENT             = 80      # was 25 — raise torque ceiling
+const LOADED_MAX_SPEED               = 25_600  # was 51_200 — half speed
+const LOADED_MAX_ACCELERATION        = 10_240  # was 51_200 — 5× slower ramp start
+const LOADED_MAX_DECELERATION        = 10_240  # was 51_200 — 5× slower ramp stop
+const LOADED_MAX_ENCODER_DEVIATION   = 5_000   # was 1_000 — allow more lag under load
+const LOADED_MAX_VELOCITY_DEVIATION  = 60_000  # was 30_000 — same reason
 
 # ============================================================
 # LOW LEVEL WRAPPERS
@@ -433,6 +447,37 @@ function startup!(dev)
     enable_closed_loop(dev);   wait_for_idle(dev)
 
     @info "Startup complete."
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# startup_loaded!
+# Same sequence as startup! but with parameters tuned for the ~20 kg lead block.
+# Use instead of startup! whenever the block is on the platform.
+# The lead screws are self-locking so no standby_current change is needed —
+# the platform holds position without motor power regardless.
+# ─────────────────────────────────────────────────────────────────────────────
+function startup_loaded!(dev)
+    @info "PowerOn (loaded) — higher current, slower ramp for 20 kg block"
+    power_on(dev;
+        max_current      = LOADED_MAX_CURRENT,
+        max_speed        = LOADED_MAX_SPEED,
+        max_acceleration = LOADED_MAX_ACCELERATION,
+        max_deceleration = LOADED_MAX_DECELERATION)
+    wait_for_idle(dev)
+
+    @info "StartInit (loaded) — looser stall-detection tolerances"
+    start_init(dev;
+        max_encoder_deviation  = LOADED_MAX_ENCODER_DEVIATION,
+        max_velocity_deviation = LOADED_MAX_VELOCITY_DEVIATION)
+    wait_for_idle(dev)
+
+    @info "DisableClosedLoop"
+    disable_closed_loop(dev);  wait_for_idle(dev)
+
+    @info "EnableClosedLoop — clean CL init before any move"
+    enable_closed_loop(dev);   wait_for_idle(dev)
+
+    @info "Startup (loaded) complete."
 end
 
 # ─────────────────────────────────────────────────────────────────────────────
