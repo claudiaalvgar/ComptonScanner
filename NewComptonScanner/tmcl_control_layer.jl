@@ -30,6 +30,7 @@ export connect_board,
        startup_loaded!,
        calibrate!,
        end_measurement!,
+       set_max_current!,
        shutdown!,
        read_closed_loop_status,
        RefZero_run_only_once_after_unplugging_board!
@@ -519,6 +520,18 @@ function end_measurement!(dev;
     @info "ExitMeasurementMode — restore currents (run=$(max_current), standby=$(standby_current))"
     exit_measurement_mode(dev); wait_for_idle(dev)
 end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# set_max_current!
+# Direct SAP write — reliable with CL active, unlike power_on's GGP/AAP route.
+# ─────────────────────────────────────────────────────────────────────────────
+function set_max_current!(dev, current::Int)
+    for ax in 0:2
+        set_axis_parameter(dev, 6, ax, current)
+    end
+    @info "Max current set to $(current) on all 3 axes"
+end
+
 # ─────────────────────────────────────────────────────────────────────────────
 # shutdown!
 # ─────────────────────────────────────────────────────────────────────────────

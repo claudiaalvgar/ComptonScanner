@@ -35,6 +35,9 @@ startup!(dev)                 # PowerOn → StartInit → DisableCL → EnableCL
 # calib positions — the encoder reference survived and EEPROM values are still correct.
 calibrate!(dev)               # SimultaneousCalibration → save to EEPROM
 
+#Increase max current (torque) on all 3 axes — reliable even with CL active
+#set_max_current!(dev, 40)   # bump run current, e.g. 25 -> 40
+
 #### 3rd block to run ####
 const MOVE_NSTEPS = 500_000   # microsteps above calibration block
 const DEFAULT_MAX_SPEED = 51_200
